@@ -4,6 +4,7 @@ client/.env
 
 # Build outputs
 client/bin/
+server/server
 
 # OS
 .DS_Store
