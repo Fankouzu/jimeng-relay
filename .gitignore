@@ -1,0 +1,9 @@
+# Environment
+.env
+client/.env
+
+# Build outputs
+client/bin/
+
+# OS
+.DS_Store
