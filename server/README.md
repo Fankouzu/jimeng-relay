@@ -36,9 +36,41 @@ Jimeng Relay Server 是一个高性能的即梦 4.0 API 中继服务，旨在为
 3. **启动服务**：
    ```bash
    cd server
-   go run cmd/server/main.go
+   go run cmd/server/main.go serve
    ```
    服务启动后会自动创建 SQLite 数据库文件并执行迁移。
+
+## 命令行工具
+
+`server` 二进制提供内置 CLI，用于服务启动和 API Key 生命周期管理。
+
+```bash
+# 编译
+cd server
+go build -o jimeng-server ./cmd/server/main.go
+
+# 查看帮助
+./jimeng-server help
+./jimeng-server key help
+```
+
+### API Key（必须通过 CLI 生成）
+
+> `access_key/secret_key` 由 CLI 生成，服务端不再提供 `/v1/keys` HTTP 管理端点。
+
+```bash
+# 生成 key
+./jimeng-server key create --description "prod-client-a" --expires-at 2026-12-31T23:59:59Z
+
+# 列出 key
+./jimeng-server key list
+
+# 吊销 key
+./jimeng-server key revoke --id key_xxx
+
+# 轮换 key（默认 grace-period=5m）
+./jimeng-server key rotate --id key_xxx --description "rotated" --grace-period 10m
+```
 
 ## 线上部署 (PostgreSQL)
 
@@ -56,7 +88,7 @@ Jimeng Relay Server 是一个高性能的即梦 4.0 API 中继服务，旨在为
 客户端从直接调用即梦 API 迁移到使用 Relay Server 仅需两步：
 
 1. **切换 Base URL**：将请求域名指向 Relay Server 的地址（如 `http://localhost:8080`）。
-2. **更新 AK/SK**：使用在 Relay Server 管理接口生成的 API Key 对请求进行 SigV4 签名。
+2. **更新 AK/SK**：使用 `./jimeng-server key create` 生成的 API Key 对请求进行 SigV4 签名。
    - **Service**: `cv`
    - **Region**: 与服务端配置的 `VOLC_REGION` 一致
 
@@ -67,14 +99,9 @@ Jimeng Relay Server 是一个高性能的即梦 4.0 API 中继服务，旨在为
 | 提交任务 | `/v1/submit` | `/?Action=CVSync2AsyncSubmitTask` |
 | 获取结果 | `/v1/get-result` | `/?Action=CVSync2AsyncGetResult` |
 
-## 管理接口 (API Key 管理)
+## 管理方式 (API Key)
 
-Relay Server 提供了内置的 API Key 管理接口：
-
-- `POST /v1/keys`：创建新的 API Key
-- `GET /v1/keys`：列出所有 API Key
-- `POST /v1/keys/{id}/revoke`：吊销 API Key
-- `POST /v1/keys/{id}/rotate`：轮换 API Key
+API Key 管理仅通过 CLI 完成：`key create/list/revoke/rotate`。
 
 ## 开发与验证
 
@@ -90,6 +117,9 @@ go vet ./...
 
 # 编译二进制文件
 go build -o jimeng-server ./cmd/server/main.go
+
+# 命令行 lint（与 CI 一致）
+/tmp/go-bin/golangci-lint run
 ```
 
 ## 安全与审计
