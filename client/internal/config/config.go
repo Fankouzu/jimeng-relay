@@ -98,9 +98,8 @@ func Load(opts Options) (Config, error) {
 	}
 
 	creds, err := LoadCredentials(CredentialsOptions{
-		AccessKey:  opts.AccessKey,
-		SecretKey:  opts.SecretKey,
-		ConfigFile: opts.ConfigFile,
+		AccessKey: opts.AccessKey,
+		SecretKey: opts.SecretKey,
 	})
 	if err != nil {
 		return Config{}, err

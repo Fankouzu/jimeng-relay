@@ -29,6 +29,8 @@ type FlowResult struct {
 	LocalFiles []string
 }
 
+var imageDownloadHTTPClient = &http.Client{Timeout: 60 * time.Second}
+
 func (c *Client) GenerateImage(ctx context.Context, req SubmitRequest, opts FlowOptions) (*FlowResult, error) {
 	submitResp, err := c.SubmitTask(ctx, req)
 	if err != nil {
@@ -212,6 +214,14 @@ func downloadImage(ctx context.Context, taskID string, imageURL string, index in
 		return "", fmt.Errorf("image url is empty")
 	}
 
+	u, err := url.Parse(imageURL)
+	if err != nil {
+		return "", fmt.Errorf("parse image url failed: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported image url scheme: %s", u.Scheme)
+	}
+
 	fileName, err := buildFileName(taskID, imageURL, index, opts.Format)
 	if err != nil {
 		return "", fmt.Errorf("build file name failed: %w", err)
@@ -236,7 +246,7 @@ func downloadImage(ctx context.Context, taskID string, imageURL string, index in
 		return "", fmt.Errorf("create download request failed: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := imageDownloadHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("send download request failed: %w", err)
 	}

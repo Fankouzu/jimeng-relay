@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jimeng-relay/client/internal/api"
+	internalerrors "github.com/jimeng-relay/client/internal/errors"
 )
 
 type GetResultRequest struct {
@@ -45,7 +46,37 @@ func (c *Client) GetResult(ctx context.Context, req GetResultRequest) (*GetResul
 		"task_id": req.TaskID,
 	}
 
-	body, _, err := c.visual.CVSync2AsyncGetResult(reqBody)
+	var body map[string]interface{}
+	err := DoWithRetry(ctx, DefaultRetryConfig, func() error {
+		respBody, _, reqErr := c.visual.CVSync2AsyncGetResult(reqBody)
+		if reqErr != nil {
+			return reqErr
+		}
+
+		code := toInt(respBody["code"])
+		status := toInt(respBody["status"])
+		message := toString(respBody["message"])
+		requestID := toString(respBody["request_id"])
+
+		if code == 50429 || code == 50430 || status == 50429 || status == 50430 {
+			return internalerrors.New(
+				internalerrors.ErrRateLimited,
+				fmt.Sprintf("query task rate limited: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
+				nil,
+			)
+		}
+
+		if code != 10000 || status != 10000 {
+			return internalerrors.New(
+				internalerrors.ErrBusinessFailed,
+				fmt.Sprintf("query task business failed: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
+				nil,
+			)
+		}
+
+		body = respBody
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%s request failed: %w", api.ActionGetResult, err)
 	}

@@ -22,6 +22,12 @@ jobs:
       - name: Run Vet
         run: cd client && make vet
 
+      - name: Run Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60.3
+          working-directory: client
+
       - name: Run Tests
         run: cd client && make test
 

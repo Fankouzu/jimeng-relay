@@ -37,6 +37,8 @@ type submitFlagValues struct {
 
 var submitFlags submitFlagValues
 
+const maxInputImageFileBytes = 5 * 1024 * 1024
+
 var submitCmd = &cobra.Command{
 	Use:   "submit",
 	Short: "Submit a task",
@@ -202,12 +204,19 @@ func loadImageFilesAsBase64(paths []string) ([]string, error) {
 		if path == "" {
 			continue
 		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("stat --image-file %q failed: %w", path, err)
+		}
+		if info.Size() <= 0 {
+			return nil, fmt.Errorf("--image-file %q is empty", path)
+		}
+		if info.Size() > maxInputImageFileBytes {
+			return nil, fmt.Errorf("--image-file %q exceeds max size %d bytes", path, maxInputImageFileBytes)
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read --image-file %q failed: %w", path, err)
-		}
-		if len(data) == 0 {
-			return nil, fmt.Errorf("--image-file %q is empty", path)
 		}
 		out = append(out, base64.StdEncoding.EncodeToString(data))
 	}

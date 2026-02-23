@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jimeng-relay/client/internal/jimeng"
 	"github.com/spf13/cobra"
@@ -31,6 +32,8 @@ type downloadResult struct {
 	ImageURLs []string `json:"image_urls"`
 	Files     []string `json:"files"`
 }
+
+var downloadHTTPClient = &http.Client{Timeout: 60 * time.Second}
 
 var downloadCmd = &cobra.Command{
 	Use:   "download",
@@ -243,7 +246,7 @@ func downloadOne(ctx context.Context, rawURL string, dir string, index int, over
 	if err != nil {
 		return "", fmt.Errorf("create download request failed: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := downloadHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("send download request failed: %w", err)
 	}
@@ -263,6 +266,9 @@ func fileNameFromURL(rawURL string, index int) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", fmt.Errorf("parse image url failed: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported image url scheme: %s", u.Scheme)
 	}
 	base := path.Base(u.Path)
 	if base == "" || base == "." || base == "/" || base == ".." {

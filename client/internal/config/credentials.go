@@ -19,9 +19,8 @@ func (c Credentials) LogValue() slog.Value {
 }
 
 type CredentialsOptions struct {
-	AccessKey  *string
-	SecretKey  *string
-	ConfigFile *string
+	AccessKey *string
+	SecretKey *string
 }
 
 type MissingCredentialsError struct {
@@ -34,9 +33,6 @@ func (e *MissingCredentialsError) Error() string {
 
 func LoadCredentials(opts CredentialsOptions) (Credentials, error) {
 	var c Credentials
-
-	// TODO: support config file loading (~/.volc/config or user-specified).
-	_ = opts.ConfigFile
 
 	if v, ok := lookupEnvNonEmpty(EnvAccessKey); ok {
 		c.AccessKey = v
