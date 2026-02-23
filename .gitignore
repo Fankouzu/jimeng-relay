@@ -7,3 +7,4 @@ client/bin/
 
 # OS
 .DS_Store
+.sisyphus
