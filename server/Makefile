@@ -1,4 +1,4 @@
-.PHONY: test test-race vet build clean
+.PHONY: test test-race vet lint build clean
 
 test:
 	go test ./...
@@ -8,6 +8,9 @@ test-race:
 
 vet:
 	go vet ./...
+
+lint:
+	golangci-lint run
 
 build:
 	go build ./...

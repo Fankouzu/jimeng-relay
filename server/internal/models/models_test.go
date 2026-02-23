@@ -9,12 +9,13 @@ func TestAPIKeyStateHelpers(t *testing.T) {
 	now := time.Now().UTC()
 
 	active := APIKey{
-		ID:            "k1",
-		AccessKey:     "ak_test",
-		SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv",
-		Status:        APIKeyStatusActive,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:                  "k1",
+		AccessKey:           "ak_test",
+		SecretKeyHash:       "$2a$10$abcdefghijklmnopqrstuv",
+		SecretKeyCiphertext: "v1:test",
+		Status:              APIKeyStatusActive,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	if !active.IsActive() {
 		t.Fatalf("expected active key to be active")
@@ -48,12 +49,13 @@ func TestAPIKeyValidate(t *testing.T) {
 	now := time.Now().UTC()
 
 	valid := APIKey{
-		ID:            "k1",
-		AccessKey:     "ak_test",
-		SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv",
-		Status:        APIKeyStatusActive,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:                  "k1",
+		AccessKey:           "ak_test",
+		SecretKeyHash:       "$2a$10$abcdefghijklmnopqrstuv",
+		SecretKeyCiphertext: "v1:test",
+		Status:              APIKeyStatusActive,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 
 	if err := valid.Validate(); err != nil {
@@ -64,6 +66,12 @@ func TestAPIKeyValidate(t *testing.T) {
 	invalid.SecretKeyHash = ""
 	if err := invalid.Validate(); err == nil {
 		t.Fatalf("expected error when secret_key_hash is empty")
+	}
+
+	invalid = valid
+	invalid.SecretKeyCiphertext = ""
+	if err := invalid.Validate(); err == nil {
+		t.Fatalf("expected error when secret_key_ciphertext is empty")
 	}
 
 	invalid = valid

@@ -40,7 +40,10 @@ func TestRedactingHandler(t *testing.T) {
 		t.Errorf("expected request_id test-req-id, got %v", result["request_id"])
 	}
 
-	auth := result["authorization"].(string)
+	auth, ok := result["authorization"].(string)
+	if !ok {
+		t.Fatalf("authorization should be string, got %T", result["authorization"])
+	}
 	if !strings.HasSuffix(auth, "...") || len(auth) != 23 {
 		t.Errorf("authorization not correctly redacted: %s", auth)
 	}
@@ -60,12 +63,18 @@ func TestRedactingHandler(t *testing.T) {
 		t.Errorf("signature not redacted: %v", result["signature"])
 	}
 
-	bin := result["binary_data_base64"].(string)
+	bin, ok := result["binary_data_base64"].(string)
+	if !ok {
+		t.Fatalf("binary_data_base64 should be string, got %T", result["binary_data_base64"])
+	}
 	if !strings.HasSuffix(bin, "...") || len(bin) != 53 {
 		t.Errorf("binary_data_base64 not correctly truncated: %s", bin)
 	}
 
-	nested := result["nested"].(map[string]interface{})
+	nested, ok := result["nested"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("nested should be map, got %T", result["nested"])
+	}
 	if nested["sk"] != "***" {
 		t.Errorf("nested sk not redacted: %v", nested["sk"])
 	}

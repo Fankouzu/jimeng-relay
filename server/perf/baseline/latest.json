@@ -1,0 +1,45 @@
+{
+  "at": "2026-02-23T21:03:12.516569Z",
+  "go_version": "go1.26.0",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "cpu": 12,
+  "gomaxprocs": 12,
+  "config": {
+    "duration": 5000000000,
+    "timeout": 3000000000,
+    "max_retries": 2,
+    "low_concurrency": 8,
+    "high_concurrency": 48,
+    "client_max_idle_per_host": 256,
+    "database": "sqlite",
+    "database_url": "temp-file",
+    "upstream_delay": 20000000
+  },
+  "scenarios": [
+    {
+      "name": "low",
+      "concurrency": 8,
+      "duration": 5022597166,
+      "total": 1454,
+      "success": 1454,
+      "http_failures": 0,
+      "transport_errors": 0,
+      "req_per_sec": 289.4916617726615,
+      "p95_ms": 32.76,
+      "error_rate": 0
+    },
+    {
+      "name": "high",
+      "concurrency": 48,
+      "duration": 5045925709,
+      "total": 3052,
+      "success": 3052,
+      "http_failures": 0,
+      "transport_errors": 0,
+      "req_per_sec": 604.8444182514222,
+      "p95_ms": 155.516,
+      "error_rate": 0
+    }
+  ]
+}

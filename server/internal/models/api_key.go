@@ -14,16 +14,17 @@ const (
 )
 
 type APIKey struct {
-	ID            string       `json:"id"`
-	AccessKey     string       `json:"access_key"`
-	SecretKeyHash string       `json:"secret_key_hash"`
-	Description   string       `json:"description,omitempty"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-	ExpiresAt     *time.Time   `json:"expires_at,omitempty"`
-	RevokedAt     *time.Time   `json:"revoked_at,omitempty"`
-	RotationOf    *string      `json:"rotation_of,omitempty"`
-	Status        APIKeyStatus `json:"status"`
+	ID                  string       `json:"id"`
+	AccessKey           string       `json:"access_key"`
+	SecretKeyHash       string       `json:"secret_key_hash"`
+	SecretKeyCiphertext string       `json:"-"`
+	Description         string       `json:"description,omitempty"`
+	CreatedAt           time.Time    `json:"created_at"`
+	UpdatedAt           time.Time    `json:"updated_at"`
+	ExpiresAt           *time.Time   `json:"expires_at,omitempty"`
+	RevokedAt           *time.Time   `json:"revoked_at,omitempty"`
+	RotationOf          *string      `json:"rotation_of,omitempty"`
+	Status              APIKeyStatus `json:"status"`
 }
 
 func (k APIKey) IsActive() bool {
@@ -56,6 +57,9 @@ func (k APIKey) Validate() error {
 	}
 	if k.SecretKeyHash == "" {
 		return fmt.Errorf("secret_key_hash is required")
+	}
+	if k.SecretKeyCiphertext == "" {
+		return fmt.Errorf("secret_key_ciphertext is required")
 	}
 	if k.CreatedAt.IsZero() {
 		return fmt.Errorf("created_at is required")

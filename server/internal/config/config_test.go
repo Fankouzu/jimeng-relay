@@ -16,12 +16,14 @@ func TestLoad(t *testing.T) {
 		os.Unsetenv(EnvServerPort)
 		os.Unsetenv(EnvDatabaseType)
 		os.Unsetenv(EnvDatabaseURL)
+		os.Unsetenv(EnvAPIKeyEncryptionKey)
 	}
 
 	t.Run("DefaultValues", func(t *testing.T) {
 		clearEnv()
 		os.Setenv(EnvAccessKey, "test-ak")
 		os.Setenv(EnvSecretKey, "test-sk")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 		defer clearEnv()
 
 		cfg, err := Load(Options{})
@@ -55,6 +57,7 @@ func TestLoad(t *testing.T) {
 		os.Setenv(EnvSecretKey, "env-sk")
 		os.Setenv(EnvRegion, "env-region")
 		os.Setenv(EnvServerPort, "9090")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 		defer clearEnv()
 
 		cfg, err := Load(Options{})
@@ -77,6 +80,7 @@ func TestLoad(t *testing.T) {
 		clearEnv()
 		os.Setenv(EnvAccessKey, "env-ak")
 		os.Setenv(EnvSecretKey, "env-sk")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 		defer clearEnv()
 
 		ak := "opt-ak"
@@ -105,6 +109,7 @@ func TestLoad(t *testing.T) {
 VOLC_ACCESSKEY=file-ak
 VOLC_SECRETKEY=file-sk
 SERVER_PORT=6060
+API_KEY_ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 `
 		tmpFile := "test.env"
 		if err := os.WriteFile(tmpFile, []byte(envContent), 0644); err != nil {
@@ -131,6 +136,7 @@ SERVER_PORT=6060
 		clearEnv()
 		os.Setenv(EnvAccessKey, "ak")
 		os.Setenv(EnvSecretKey, "sk")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
 		os.Setenv(EnvTimeout, "invalid")
 		defer clearEnv()
 

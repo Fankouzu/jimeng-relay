@@ -15,7 +15,11 @@ func (m *mockAPIKeyRepository) Create(_ context.Context, key models.APIKey) erro
 }
 
 func (m *mockAPIKeyRepository) GetByAccessKey(_ context.Context, accessKey string) (models.APIKey, error) {
-	return models.APIKey{ID: "k1", AccessKey: accessKey, SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv", Status: models.APIKeyStatusActive, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
+	return models.APIKey{ID: "k1", AccessKey: accessKey, SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv", SecretKeyCiphertext: "v1:test", Status: models.APIKeyStatusActive, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
+}
+
+func (m *mockAPIKeyRepository) GetByID(_ context.Context, id string) (models.APIKey, error) {
+	return models.APIKey{ID: id, AccessKey: "ak", SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv", SecretKeyCiphertext: "v1:test", Status: models.APIKeyStatusActive, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
 }
 
 func (m *mockAPIKeyRepository) List(_ context.Context) ([]models.APIKey, error) {
@@ -31,6 +35,13 @@ func (m *mockAPIKeyRepository) Revoke(_ context.Context, _ string, revokedAt tim
 
 func (m *mockAPIKeyRepository) SetExpired(_ context.Context, _ string, expiredAt time.Time) error {
 	if expiredAt.IsZero() {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func (m *mockAPIKeyRepository) SetExpiresAt(_ context.Context, _ string, expiresAt time.Time) error {
+	if expiresAt.IsZero() {
 		return context.DeadlineExceeded
 	}
 	return nil
@@ -93,14 +104,20 @@ func TestRepositoryContracts(t *testing.T) {
 	now := time.Now().UTC()
 
 	var apiKeyRepo APIKeyRepository = &mockAPIKeyRepository{}
-	if err := apiKeyRepo.Create(ctx, models.APIKey{ID: "k1", AccessKey: "ak", SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv", Status: models.APIKeyStatusActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := apiKeyRepo.Create(ctx, models.APIKey{ID: "k1", AccessKey: "ak", SecretKeyHash: "$2a$10$abcdefghijklmnopqrstuv", SecretKeyCiphertext: "v1:test", Status: models.APIKeyStatusActive, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("unexpected error creating api key: %v", err)
 	}
 	if _, err := apiKeyRepo.GetByAccessKey(ctx, "ak"); err != nil {
 		t.Fatalf("unexpected error getting api key: %v", err)
 	}
+	if _, err := apiKeyRepo.GetByID(ctx, "k1"); err != nil {
+		t.Fatalf("unexpected error getting api key by id: %v", err)
+	}
 	if _, err := apiKeyRepo.List(ctx); err != nil {
 		t.Fatalf("unexpected error listing api keys: %v", err)
+	}
+	if err := apiKeyRepo.SetExpiresAt(ctx, "k1", now.Add(time.Hour)); err != nil {
+		t.Fatalf("unexpected error setting api key expires_at: %v", err)
 	}
 
 	var downstreamRepo DownstreamRequestRepository = &mockDownstreamRequestRepository{}

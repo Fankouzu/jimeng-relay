@@ -9,14 +9,15 @@ import (
 )
 
 const (
-	EnvAccessKey    = "VOLC_ACCESSKEY"
-	EnvSecretKey    = "VOLC_SECRETKEY"
-	EnvRegion       = "VOLC_REGION"
-	EnvHost         = "VOLC_HOST"
-	EnvTimeout      = "VOLC_TIMEOUT"
-	EnvServerPort   = "SERVER_PORT"
-	EnvDatabaseType = "DATABASE_TYPE"
-	EnvDatabaseURL  = "DATABASE_URL"
+	EnvAccessKey           = "VOLC_ACCESSKEY"
+	EnvSecretKey           = "VOLC_SECRETKEY"
+	EnvRegion              = "VOLC_REGION"
+	EnvHost                = "VOLC_HOST"
+	EnvTimeout             = "VOLC_TIMEOUT"
+	EnvServerPort          = "SERVER_PORT"
+	EnvDatabaseType        = "DATABASE_TYPE"
+	EnvDatabaseURL         = "DATABASE_URL"
+	EnvAPIKeyEncryptionKey = "API_KEY_ENCRYPTION_KEY"
 )
 
 const (
@@ -29,13 +30,14 @@ const (
 )
 
 type Config struct {
-	Credentials  Credentials
-	Region       string
-	Host         string
-	Timeout      time.Duration
-	ServerPort   string
-	DatabaseType string
-	DatabaseURL  string
+	Credentials         Credentials
+	Region              string
+	Host                string
+	Timeout             time.Duration
+	ServerPort          string
+	DatabaseType        string
+	DatabaseURL         string
+	APIKeyEncryptionKey string
 }
 
 func (c Config) LogValue() slog.Value {
@@ -47,19 +49,21 @@ func (c Config) LogValue() slog.Value {
 		slog.String("server_port", c.ServerPort),
 		slog.String("database_type", c.DatabaseType),
 		slog.String("database_url", c.DatabaseURL),
+		slog.String("api_key_encryption_key", "***"),
 	)
 }
 
 type Options struct {
-	AccessKey    *string
-	SecretKey    *string
-	Region       *string
-	Host         *string
-	Timeout      *time.Duration
-	ServerPort   *string
-	DatabaseType *string
-	DatabaseURL  *string
-	ConfigFile   *string
+	AccessKey           *string
+	SecretKey           *string
+	Region              *string
+	Host                *string
+	Timeout             *time.Duration
+	ServerPort          *string
+	DatabaseType        *string
+	DatabaseURL         *string
+	APIKeyEncryptionKey *string
+	ConfigFile          *string
 }
 
 func Load(opts Options) (Config, error) {
@@ -102,6 +106,9 @@ func Load(opts Options) (Config, error) {
 	}
 	if v, ok := lookupEnvNonEmpty(EnvDatabaseURL); ok {
 		cfg.DatabaseURL = v
+	}
+	if v, ok := lookupEnvNonEmpty(EnvAPIKeyEncryptionKey); ok {
+		cfg.APIKeyEncryptionKey = v
 	}
 
 	// Override with options (flags)
@@ -146,6 +153,13 @@ func Load(opts Options) (Config, error) {
 		}
 		cfg.DatabaseURL = v
 	}
+	if opts.APIKeyEncryptionKey != nil {
+		v := strings.TrimSpace(*opts.APIKeyEncryptionKey)
+		if v == "" {
+			return Config{}, fmt.Errorf("api key encryption key must not be empty")
+		}
+		cfg.APIKeyEncryptionKey = v
+	}
 
 	creds, err := LoadCredentials(CredentialsOptions{
 		AccessKey: opts.AccessKey,
@@ -155,6 +169,9 @@ func Load(opts Options) (Config, error) {
 		return Config{}, err
 	}
 	cfg.Credentials = creds
+	if strings.TrimSpace(cfg.APIKeyEncryptionKey) == "" {
+		return Config{}, fmt.Errorf("%s is required", EnvAPIKeyEncryptionKey)
+	}
 
 	return cfg, nil
 }

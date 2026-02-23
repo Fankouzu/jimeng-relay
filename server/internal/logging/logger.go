@@ -9,7 +9,12 @@ import (
 
 type contextKey string
 
-const RequestIDKey contextKey = "request_id"
+const (
+	RequestIDKey      contextKey = "request_id"
+	LatencyKey        contextKey = "latency_ms"
+	UpstreamStatusKey contextKey = "upstream_status"
+	ErrorClassKey     contextKey = "error_class"
+)
 
 type RedactingHandler struct {
 	slog.Handler
@@ -26,6 +31,15 @@ func NewLogger(level slog.Level) *slog.Logger {
 func (h *RedactingHandler) Handle(ctx context.Context, r slog.Record) error {
 	if reqID, ok := ctx.Value(RequestIDKey).(string); ok {
 		r.AddAttrs(slog.String("request_id", reqID))
+	}
+	if latency, ok := ctx.Value(LatencyKey).(int64); ok {
+		r.AddAttrs(slog.Int64("latency_ms", latency))
+	}
+	if status, ok := ctx.Value(UpstreamStatusKey).(int); ok {
+		r.AddAttrs(slog.Int("upstream_status", status))
+	}
+	if errClass, ok := ctx.Value(ErrorClassKey).(string); ok {
+		r.AddAttrs(slog.String("error_class", errClass))
 	}
 
 	newRecord := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)

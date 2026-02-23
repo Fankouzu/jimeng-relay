@@ -9,10 +9,12 @@ import (
 
 type APIKeyRepository interface {
 	Create(ctx context.Context, key models.APIKey) error
+	GetByID(ctx context.Context, id string) (models.APIKey, error)
 	GetByAccessKey(ctx context.Context, accessKey string) (models.APIKey, error)
 	List(ctx context.Context) ([]models.APIKey, error)
 	Revoke(ctx context.Context, id string, revokedAt time.Time) error
 	SetExpired(ctx context.Context, id string, expiredAt time.Time) error
+	SetExpiresAt(ctx context.Context, id string, expiresAt time.Time) error
 }
 
 type DownstreamRequestRepository interface {
