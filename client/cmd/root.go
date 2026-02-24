@@ -19,6 +19,7 @@ type rootFlagValues struct {
 	region    string
 	host      string
 	timeout   string
+	debug     bool
 }
 
 var rootFlags rootFlagValues
@@ -49,6 +50,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootFlags.region, "region", "", fmt.Sprintf("Volcengine region (overrides %s)", config.EnvRegion))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.host, "host", "", fmt.Sprintf("Volcengine API host (overrides %s)", config.EnvHost))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.timeout, "timeout", "", fmt.Sprintf("API request timeout duration, e.g. 30s, 2m (overrides %s)", config.EnvTimeout))
+	rootCmd.PersistentFlags().BoolVar(&rootFlags.debug, "debug", false, "Enable debug logging")
 }
 
 func flagChanged(cmd *cobra.Command, name string) bool {
@@ -106,6 +108,8 @@ func loadConfigFromRootFlags(cmd *cobra.Command) (config.Config, error) {
 		}
 		opts.Timeout = &d
 	}
+
+	opts.Debug = rootFlags.debug
 
 	return config.Load(opts)
 }

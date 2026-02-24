@@ -49,7 +49,7 @@ Jimeng Relay Server 是一个高性能的即梦 4.0 API 中继服务，旨在为
 ```bash
 # 编译
 cd server
-go build -o jimeng-server ./cmd/server/main.go
+go build -o ./bin/jimeng-server ./cmd/server/main.go
 
 # 查看帮助
 ./jimeng-server help
@@ -118,7 +118,7 @@ go test -race ./...
 go vet ./...
 
 # 编译二进制文件
-go build -o jimeng-server ./cmd/server/main.go
+go build -o ./bin/jimeng-server ./cmd/server/main.go
 
 # 命令行 lint（与 CI 一致）
 /tmp/go-bin/golangci-lint run

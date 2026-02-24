@@ -14,19 +14,23 @@ const (
 	EnvRegion    = "VOLC_REGION"
 	EnvHost      = "VOLC_HOST"
 	EnvTimeout   = "VOLC_TIMEOUT"
+	EnvScheme    = "VOLC_SCHEME"
 )
 
 const (
 	DefaultRegion  = "cn-north-1"
 	DefaultHost    = "visual.volcengineapi.com"
 	DefaultTimeout = 30 * time.Second
+	DefaultScheme  = "https"
 )
 
 type Config struct {
 	Credentials Credentials
 	Region      string
 	Host        string
+	Scheme      string
 	Timeout     time.Duration
+	Debug       bool
 }
 
 func (c Config) LogValue() slog.Value {
@@ -34,6 +38,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Any("credentials", c.Credentials),
 		slog.String("region", c.Region),
 		slog.String("host", c.Host),
+		slog.String("scheme", c.Scheme),
 		slog.String("timeout", c.Timeout.String()),
 	)
 }
@@ -45,15 +50,16 @@ type Options struct {
 	Host       *string
 	Timeout    *time.Duration
 	ConfigFile *string
+	Debug      bool
 }
 
 func Load(opts Options) (Config, error) {
 	cfg := Config{
 		Region:  DefaultRegion,
 		Host:    DefaultHost,
+		Scheme:  DefaultScheme,
 		Timeout: DefaultTimeout,
 	}
-
 	envFile := ".env"
 	if opts.ConfigFile != nil && *opts.ConfigFile != "" {
 		envFile = *opts.ConfigFile
@@ -61,12 +67,14 @@ func Load(opts Options) (Config, error) {
 	if err := loadEnvFile(envFile); err != nil {
 		return Config{}, err
 	}
-
 	if v, ok := lookupEnvNonEmpty(EnvRegion); ok {
 		cfg.Region = v
 	}
 	if v, ok := lookupEnvNonEmpty(EnvHost); ok {
 		cfg.Host = v
+	}
+	if v, ok := lookupEnvNonEmpty(EnvScheme); ok {
+		cfg.Scheme = v
 	}
 	if v, ok := lookupEnvNonEmpty(EnvTimeout); ok {
 		d, err := time.ParseDuration(v)
@@ -75,7 +83,6 @@ func Load(opts Options) (Config, error) {
 		}
 		cfg.Timeout = d
 	}
-
 	if opts.Region != nil {
 		v := strings.TrimSpace(*opts.Region)
 		if v == "" {
@@ -96,7 +103,6 @@ func Load(opts Options) (Config, error) {
 		}
 		cfg.Timeout = *opts.Timeout
 	}
-
 	creds, err := LoadCredentials(CredentialsOptions{
 		AccessKey: opts.AccessKey,
 		SecretKey: opts.SecretKey,
@@ -105,7 +111,7 @@ func Load(opts Options) (Config, error) {
 		return Config{}, err
 	}
 	cfg.Credentials = creds
-
+	cfg.Debug = opts.Debug
 	return cfg, nil
 }
 
@@ -129,22 +135,18 @@ func loadEnvFile(path string) error {
 		}
 		return fmt.Errorf("failed to read env file %s: %w", path, err)
 	}
-
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
-
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-
 		if key != "" {
 			if _, ok := os.LookupEnv(key); !ok {
 				os.Setenv(key, value)

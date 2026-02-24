@@ -320,9 +320,9 @@ func (c *Client) doOnce(ctx context.Context, action string, body []byte, headers
 	if err != nil {
 		return nil, internalerrors.New(internalerrors.ErrUpstreamFailed, "build canonical request", err)
 	}
-	scope := strings.Join([]string{dateScope, c.region, c.service, "aws4_request"}, "/")
+	scope := strings.Join([]string{dateScope, c.region, c.service, "request"}, "/")
 	stringToSign := strings.Join([]string{
-		"AWS4-HMAC-SHA256",
+		"HMAC-SHA256",
 		xDate,
 		scope,
 		sha256Hex([]byte(canonicalRequest)),
@@ -330,7 +330,7 @@ func (c *Client) doOnce(ctx context.Context, action string, body []byte, headers
 	signingKey := deriveSigningKey(c.sk, dateScope, c.region, c.service)
 	signature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
 
-	authorization := "AWS4-HMAC-SHA256 Credential=" + c.ak + "/" + scope + ", SignedHeaders=" + strings.Join(signedHeaders, ";") + ", Signature=" + signature
+	authorization := "HMAC-SHA256 Credential=" + c.ak + "/" + scope + ", SignedHeaders=" + strings.Join(signedHeaders, ";") + ", Signature=" + signature
 	req.Header.Set("Authorization", authorization)
 
 	resp, err := c.hc.Do(req)
@@ -557,10 +557,10 @@ func awsEscape(s string) string {
 }
 
 func deriveSigningKey(secret, date, region, service string) []byte {
-	kDate := hmacSHA256([]byte("AWS4"+secret), date)
+	kDate := hmacSHA256([]byte(secret), date)
 	kRegion := hmacSHA256(kDate, region)
 	kService := hmacSHA256(kRegion, service)
-	return hmacSHA256(kService, "aws4_request")
+	return hmacSHA256(kService, "request")
 }
 
 func hmacSHA256(key []byte, message string) []byte {

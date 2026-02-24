@@ -93,13 +93,30 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 		reqBody["max_ratio"] = maxRatio
 	}
 
+	c.debug("submit request", "body", reqBody)
+
 	respBody, _, err := c.visual.CVSync2AsyncSubmitTask(reqBody)
+	c.debug("API call completed", "error", err)
 	if err != nil {
 		return nil, internalerrors.New(internalerrors.ErrUnknown, "submit task request failed", err)
 	}
 
 	if err := ctx.Err(); err != nil {
 		return nil, internalerrors.New(internalerrors.ErrTimeout, "context done after submit", err)
+	}
+
+	c.debug("response received", "has_error_field", respBody["error"] != nil, "code", respBody["code"], "status", respBody["status"], "full_body", respBody)
+
+	// Check for relay server error format: {"error":{"code":"...","message":"..."}}
+	if errObj, ok := respBody["error"].(map[string]interface{}); ok {
+		errCode := submitToString(errObj["code"])
+		errMsg := submitToString(errObj["message"])
+		c.debug("relay error detected", "code", errCode, "message", errMsg)
+		return nil, internalerrors.New(
+			internalerrors.ErrAuthFailed,
+			fmt.Sprintf("relay error: code=%s message=%s", errCode, errMsg),
+			nil,
+		)
 	}
 
 	code := submitToInt(respBody["code"])
@@ -109,6 +126,7 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 	timeElapsed := submitToInt(respBody["time_elapsed"])
 
 	if code != 10000 || status != 10000 {
+		c.debug("business failure", "code", code, "status", status, "message", message, "request_id", requestID)
 		return nil, internalerrors.New(
 			internalerrors.ErrBusinessFailed,
 			fmt.Sprintf("submit task business failed: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
@@ -139,6 +157,7 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 		RequestID:   requestID,
 		TimeElapsed: timeElapsed,
 	}
+	c.debug("submit success", "task_id", taskID, "request_id", requestID)
 	return resp, nil
 }
 

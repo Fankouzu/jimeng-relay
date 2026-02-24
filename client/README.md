@@ -38,7 +38,15 @@ cp ./bin/jimeng /usr/local/bin/jimeng
 | `VOLC_SECRETKEY` | 火山引擎 SK（必填） | - |
 | `VOLC_REGION` | 区域 | `cn-north-1` |
 | `VOLC_HOST` | API Host | `visual.volcengineapi.com` |
+| `VOLC_HOST` | API Host | `visual.volcengineapi.com` |
+| `VOLC_SCHEME` | 协议 (http/https) | `https` |
 | `VOLC_TIMEOUT` | 请求超时 | `30s` |
+### 本地测试 Relay Server
+
+如需连接本地 Relay Server 进行测试，请在 `.env` 中配置：```
+VOLC_SCHEME=http
+VOLC_HOST=localhost:8080
+```
 
 ### `.env` 使用
 

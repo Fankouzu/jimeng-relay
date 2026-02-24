@@ -63,6 +63,10 @@ func runServer() error {
 	}
 
 	logger := logging.NewLogger(slog.LevelInfo)
+	if strings.ToLower(os.Getenv("DEBUG")) == "true" {
+		logger = logging.NewLogger(slog.LevelDebug)
+		log.Printf("DEBUG mode enabled")
+	}
 
 	ctx := context.Background()
 	repos, cleanup, err := openRepositories(ctx, cfg)

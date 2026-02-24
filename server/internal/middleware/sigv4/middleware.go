@@ -2,6 +2,7 @@ package sigv4
 
 import (
 	"bytes"
+	"log"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -86,6 +87,7 @@ type authFields struct {
 	service       string
 	signedHeaders []string
 	signature     string
+	scopeSuffix   string
 }
 
 func (m *Middleware) verify(r *http.Request) error {
@@ -132,6 +134,7 @@ func (m *Middleware) verify(r *http.Request) error {
 	if err != nil {
 		return internalerrors.New(internalerrors.ErrAuthFailed, "read request body", err)
 	}
+	log.Printf("DEBUG: raw body: %s", string(body))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	payloadHash := sha256Hex(body)
 	headerPayloadHash := strings.TrimSpace(r.Header.Get("X-Content-Sha256"))
@@ -170,15 +173,35 @@ func (m *Middleware) verify(r *http.Request) error {
 	if err != nil {
 		return internalerrors.New(internalerrors.ErrAuthFailed, "build canonical request", err)
 	}
-	scope := strings.Join([]string{fields.dateScope, fields.region, fields.service, "aws4_request"}, "/")
+	log.Printf("DEBUG: canonical request: %s", canonicalRequest)
+	log.Printf("DEBUG: payload hash: %s", payloadHash)
+	scope := strings.Join([]string{fields.dateScope, fields.region, fields.service, fields.scopeSuffix}, "/")
+	// Use algorithm name based on scope suffix
+	algorithm := "AWS4-HMAC-SHA256"
+	if fields.scopeSuffix == "request" {
+		algorithm = "HMAC-SHA256"
+	}
 	stringToSign := strings.Join([]string{
-		"AWS4-HMAC-SHA256",
+		algorithm,
 		xDate,
 		scope,
 		sha256Hex([]byte(canonicalRequest)),
 	}, "\n")
-	signingKey := deriveSigningKey(secretKey, fields.dateScope, fields.region, fields.service)
+	signingKey := deriveSigningKey(secretKey, fields.dateScope, fields.region, fields.service, fields.scopeSuffix)
+	log.Printf("DEBUG: stringToSign: %s", stringToSign)
+	log.Printf("DEBUG: stringToSign hex: %x", stringToSign)
+	log.Printf("DEBUG: signing key: %x", signingKey)
 	expectedSignature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
+	// DEBUG: signature validation
+	log.Printf("DEBUG: signature mismatch")
+	log.Printf("DEBUG: expected signature: %s", strings.ToLower(expectedSignature))
+	log.Printf("DEBUG: received signature: %s", strings.ToLower(fields.signature))
+	log.Printf("DEBUG: scope suffix: %s", fields.scopeSuffix)
+	log.Printf("DEBUG: algorithm: %s", algorithm)
+	log.Printf("DEBUG: secret key (decrypted): %s", secretKey)
+	log.Printf("DEBUG: date scope: %s", fields.dateScope)
+	log.Printf("DEBUG: region: %s", fields.region)
+	log.Printf("DEBUG: service: %s", fields.service)
 	if !constantTimeHexEqual(fields.signature, expectedSignature) {
 		return internalerrors.New(internalerrors.ErrInvalidSignature, "signature mismatch", nil)
 	}
@@ -189,11 +212,14 @@ func (m *Middleware) verify(r *http.Request) error {
 }
 
 func parseAuthorization(v string) (authFields, error) {
-	const prefix = "AWS4-HMAC-SHA256 "
-	if !strings.HasPrefix(v, prefix) {
+	var body string
+	if strings.HasPrefix(v, "AWS4-HMAC-SHA256 ") {
+		body = strings.TrimSpace(strings.TrimPrefix(v, "AWS4-HMAC-SHA256 "))
+	} else if strings.HasPrefix(v, "HMAC-SHA256 ") {
+		body = strings.TrimSpace(strings.TrimPrefix(v, "HMAC-SHA256 "))
+	} else {
 		return authFields{}, internalerrors.New(internalerrors.ErrAuthFailed, "unsupported authorization algorithm", nil)
 	}
-	body := strings.TrimSpace(strings.TrimPrefix(v, prefix))
 	parts := strings.Split(body, ",")
 	values := map[string]string{}
 	for _, part := range parts {
@@ -210,8 +236,12 @@ func parseAuthorization(v string) (authFields, error) {
 		return authFields{}, internalerrors.New(internalerrors.ErrAuthFailed, "authorization fields are incomplete", nil)
 	}
 	scope := strings.Split(credential, "/")
-	if len(scope) != 5 || scope[4] != "aws4_request" {
+	if len(scope) != 5 {
 		return authFields{}, internalerrors.New(internalerrors.ErrAuthFailed, "invalid credential scope", nil)
+	}
+	// Support both "aws4_request" (AWS4) and "request" (Volc SDK) suffixes
+	if scope[4] != "aws4_request" && scope[4] != "request" {
+		return authFields{}, internalerrors.New(internalerrors.ErrAuthFailed, "invalid credential scope suffix", nil)
 	}
 	parsedHeaders := strings.Split(strings.ToLower(signedHeaders), ";")
 	for i := range parsedHeaders {
@@ -227,6 +257,7 @@ func parseAuthorization(v string) (authFields, error) {
 		service:       scope[3],
 		signedHeaders: parsedHeaders,
 		signature:     strings.ToLower(signature),
+		scopeSuffix:   scope[4],
 	}, nil
 }
 
@@ -316,11 +347,26 @@ func awsEscape(s string) string {
 	return e
 }
 
-func deriveSigningKey(secret, date, region, service string) []byte {
-	kDate := hmacSHA256([]byte("AWS4"+secret), date)
+func deriveSigningKey(secret, date, region, service, suffix string) []byte {
+	log.Printf("DEBUG deriveSigningKey: secret=%s, date=%s, region=%s, service=%s, suffix=%s", secret, date, region, service, suffix)
+	log.Printf("DEBUG secret bytes: %x", []byte(secret))
+	log.Printf("DEBUG date bytes: %x", []byte(date))
+	// Volc SDK uses no prefix, AWS4 uses "AWS4" prefix
+	var kDate []byte
+	if suffix == "request" {
+		kDate = hmacSHA256([]byte(secret), date)
+		log.Printf("DEBUG HMAC(secret, date) = %x", kDate)
+	} else {
+		kDate = hmacSHA256([]byte("AWS4"+secret), date)
+	}
+	log.Printf("DEBUG kDate: %x", kDate)
 	kRegion := hmacSHA256(kDate, region)
+	log.Printf("DEBUG kRegion: %x", kRegion)
 	kService := hmacSHA256(kRegion, service)
-	return hmacSHA256(kService, "aws4_request")
+	log.Printf("DEBUG kService: %x", kService)
+	result := hmacSHA256(kService, suffix)
+	log.Printf("DEBUG result: %x", result)
+	return result
 }
 
 func hmacSHA256(key []byte, message string) []byte {

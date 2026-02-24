@@ -6,6 +6,12 @@ client/.env
 client/bin/
 server/server
 server/jimeng-server
+server/bin/
+client/bin/
+server/server
+server/jimeng-server
+client/outputs
+
 
 # Database
 server/jimeng-relay.db
