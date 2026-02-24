@@ -5,6 +5,10 @@ client/.env
 # Build outputs
 client/bin/
 server/server
+server/jimeng-server
+
+# Database
+server/jimeng-relay.db
 
 # OS
 .DS_Store
