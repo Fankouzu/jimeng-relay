@@ -14,6 +14,8 @@
 | `SERVER_PORT` | `8080` | 服务监听端口 | **Pass**: `curl localhost:PORT` 有响应 |
 | `VOLC_REGION` | `cn-north-1` | 火山引擎 Region | **Pass**: 上游请求 Scope 匹配 |
 | `VOLC_TIMEOUT` | `30s` | 上游请求超时 | **Pass**: 慢请求在阈值内返回 |
+| `UPSTREAM_MAX_CONCURRENT` | `10` | 上游并发请求上限 | **Pass**: 超出并发进入队列等待 |
+| `UPSTREAM_MAX_QUEUE` | `100` | 上游排队队列大小 | **Pass**: 队满立即返回 429 `RATE_LIMITED` |
 
 ## 2. 数据库初始化与迁移 (DB Migration)
 
@@ -36,12 +38,12 @@
    cd server
    go run cmd/server/main.go
    ```
-2. **创建 API Key**:
+2. **创建 API Key** (使用 CLI):
    ```bash
-   curl -X POST http://localhost:8080/v1/keys -d '{"description":"test-key"}'
+   go run cmd/server/main.go key create --description "test-key"
    ```
 3. **调用 Submit (SigV4)**:
-   使用生成的 AK/SK 进行签名调用 `/v1/submit`。
+   使用 CLI 生成的 AK/SK 进行签名调用 `/v1/submit`。
    - **Pass**: 返回上游原始响应（200 或业务错误）。
    - **Fail**: 返回 401 (鉴权失败) 或 500 (审计/系统失败)。
 
@@ -50,10 +52,11 @@
 | 检查项 | 验证方法 | 判定标准 (Pass/Fail) |
 | :--- | :--- | :--- |
 | **SigV4 验签** | 使用错误 SK 调用 | **Pass**: 返回 401 `INVALID_SIGNATURE` |
-| **Key 吊销** | 调用 `/v1/keys/{id}/revoke` 后请求 | **Pass**: 返回 401 `KEY_REVOKED` |
+| **Key 吊销** | 使用 `key revoke --id {id}` CLI 命令后请求 | **Pass**: 返回 401 `KEY_REVOKED` |
 | **Key 过期** | 修改 DB `expires_at` 为过去时间后请求 | **Pass**: 返回 401 `KEY_EXPIRED` |
 | **Scope 约束** | 签名时 Region 传错 (如 `us-east-1`) | **Pass**: 返回 401 `AUTH_FAILED` (Scope mismatch) |
 | **敏感脱敏** | 检查 `audit_events` 表 `metadata` | **Pass**: `Authorization`, `sk` 等显示为 `***` |
+| **并发限流** | 设置 `UPSTREAM_MAX_CONCURRENT=1`、`UPSTREAM_MAX_QUEUE=2` 后并发 4 个请求 | **Pass**: 第 4 个请求立即返回 429 `RATE_LIMITED` |
 
 ## 5. 兼容性验证 (Compatibility)
 

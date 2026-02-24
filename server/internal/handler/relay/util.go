@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,6 +18,8 @@ import (
 	"github.com/jimeng-relay/server/internal/logging"
 	"github.com/jimeng-relay/server/internal/relay/upstream"
 )
+
+const maxDownstreamBodyBytes int64 = 2 << 20
 
 func logResponse(ctx context.Context, logger *slog.Logger, start time.Time, upstreamStatus int, err error) {
 	latency := time.Since(start).Milliseconds()
@@ -128,4 +132,19 @@ func writeRelayError(w http.ResponseWriter, err error, status int) {
 func hashRequestBody(body []byte) string {
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+func readRequestBodyLimited(r *http.Request) ([]byte, error) {
+	if r == nil || r.Body == nil {
+		return nil, nil
+	}
+	limited := io.LimitReader(r.Body, maxDownstreamBodyBytes+1)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > maxDownstreamBodyBytes {
+		return nil, errors.New("request body too large")
+	}
+	return body, nil
 }

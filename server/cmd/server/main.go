@@ -296,6 +296,11 @@ func runKeyRotate(ctx context.Context, svc *apikeyservice.Service, args []string
 }
 
 func newCLIKeyService(ctx context.Context) (repositories, func(), *apikeyservice.Service, error) {
+	// Load .env file if it exists (same as server mode)
+	if err := config.LoadEnvFile(".env"); err != nil {
+		return repositories{}, nil, nil, fmt.Errorf("load env file: %w", err)
+	}
+
 	cfg := config.Config{
 		DatabaseType: strings.TrimSpace(os.Getenv(config.EnvDatabaseType)),
 		DatabaseURL:  strings.TrimSpace(os.Getenv(config.EnvDatabaseURL)),

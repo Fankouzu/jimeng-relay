@@ -23,6 +23,7 @@ import (
 const (
 	defaultClockSkew = 5 * time.Minute
 	xDateLayout      = "20060102T150405Z"
+	maxSignedBodyBytes int64 = 2 << 20
 )
 
 type contextKey string
@@ -69,20 +70,13 @@ func New(repo repository.APIKeyRepository, cfg Config) func(http.Handler) http.H
 
 func (m *Middleware) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if shouldBypass(r.URL.Path) {
-			next.ServeHTTP(w, r)
-			return
-		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxSignedBodyBytes)
 		if err := m.verify(r); err != nil {
 			writeUnauthorized(w, err)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func shouldBypass(path string) bool {
-	return path == "/v1/keys" || strings.HasPrefix(path, "/v1/keys/")
 }
 
 type authFields struct {

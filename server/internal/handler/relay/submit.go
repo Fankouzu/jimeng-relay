@@ -2,7 +2,6 @@ package relay
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -98,10 +97,10 @@ func (h *SubmitHandler) proxySubmit(w http.ResponseWriter, r *http.Request, appl
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := readRequestBodyLimited(r)
 	if err != nil {
-		finalErr = internalerrors.New(internalerrors.ErrInternalError, "read downstream request body", err)
-		writeRelayError(w, finalErr, http.StatusInternalServerError)
+		finalErr = internalerrors.New(internalerrors.ErrValidationFailed, "read downstream request body", err)
+		writeRelayError(w, finalErr, http.StatusRequestEntityTooLarge)
 		return
 	}
 

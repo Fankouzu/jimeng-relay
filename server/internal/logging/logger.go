@@ -56,11 +56,7 @@ func (h *RedactingHandler) redactAttr(a slog.Attr) slog.Attr {
 
 	switch {
 	case key == "authorization":
-		val := a.Value.String()
-		if len(val) > 20 {
-			return slog.String(a.Key, val[:20]+"...")
-		}
-		return slog.String(a.Key, val+"...")
+		return slog.String(a.Key, "***")
 
 	case key == "x-date" || key == "x-security-token" || strings.HasPrefix(key, "x-amz-"):
 		return slog.String(a.Key, "***")

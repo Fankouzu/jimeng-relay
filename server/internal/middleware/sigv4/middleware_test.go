@@ -168,7 +168,7 @@ func TestMiddleware_RevokedOrExpiredKeyRejected(t *testing.T) {
 	}
 }
 
-func TestMiddleware_ManagementRoutesBypassVerification(t *testing.T) {
+func TestMiddleware_LegacyManagementPathsNoLongerBypassVerification(t *testing.T) {
 	now := time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC)
 	mw := New(&stubRepo{err: repository.ErrNotFound}, Config{Now: func() time.Time { return now }, SecretCipher: mustTestCipher(t)})
 
@@ -180,8 +180,8 @@ func TestMiddleware_ManagementRoutesBypassVerification(t *testing.T) {
 			mw(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)
 			})).ServeHTTP(rec, req)
-			if rec.Code != http.StatusNoContent {
-				t.Fatalf("expected bypass for management route %s, got %d", p, rec.Code)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("expected auth required for legacy management route %s, got %d", p, rec.Code)
 			}
 		})
 	}

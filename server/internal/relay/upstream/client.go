@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jimeng-relay/server/internal/config"
@@ -30,29 +31,42 @@ const (
 	defaultRetryBackoffMax  = 2 * time.Second
 
 	xDateLayout = "20060102T150405Z"
+
+	defaultMaxConcurrent = 10
+	defaultMaxQueue      = 100
 )
 
 type Options struct {
-	HTTPClient *http.Client
-	Now        func() time.Time
-	Sleep      func(context.Context, time.Duration) error
-	MaxRetries int
-	Service    string
-	Version    string
+	HTTPClient    *http.Client
+	Now           func() time.Time
+	Sleep         func(context.Context, time.Duration) error
+	MaxRetries    int
+	Service       string
+	Version       string
+	MaxConcurrent int
+	MaxQueue      int
+}
+
+type queueWaiter struct {
+	ready chan struct{}
 }
 
 type Client struct {
-	ak      string
-	sk      string
-	region  string
-	service string
-	version string
-
+	ak       string
+	sk       string
+	region   string
+	service  string
+	version  string
 	baseURL  *url.URL
 	now      func() time.Time
 	sleep    func(context.Context, time.Duration) error
 	maxRetry int
 	hc       *http.Client
+
+	mu      sync.Mutex
+	sem     chan struct{}
+	waiters []*queueWaiter
+	maxQueue int
 }
 
 type Response struct {
@@ -123,17 +137,36 @@ func NewClient(cfg config.Config, opts Options) (*Client, error) {
 		}
 	}
 
+	maxConcurrent := opts.MaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = cfg.UpstreamMaxConcurrent
+	}
+	if maxConcurrent <= 0 {
+		maxConcurrent = defaultMaxConcurrent
+	}
+
+	maxQueue := opts.MaxQueue
+	if maxQueue <= 0 {
+		maxQueue = cfg.UpstreamMaxQueue
+	}
+	if maxQueue <= 0 {
+		maxQueue = defaultMaxQueue
+	}
+
 	return &Client{
-		ak:       strings.TrimSpace(cfg.Credentials.AccessKey),
-		sk:       strings.TrimSpace(cfg.Credentials.SecretKey),
-		region:   strings.TrimSpace(cfg.Region),
-		service:  service,
-		version:  version,
-		baseURL:  baseURL,
-		now:      nowFn,
-		sleep:    sleepFn,
-		maxRetry: maxRetry,
-		hc:       hc,
+		ak:        strings.TrimSpace(cfg.Credentials.AccessKey),
+		sk:        strings.TrimSpace(cfg.Credentials.SecretKey),
+		region:    strings.TrimSpace(cfg.Region),
+		service:   service,
+		version:   version,
+		baseURL:   baseURL,
+		now:       nowFn,
+		sleep:     sleepFn,
+		maxRetry:  maxRetry,
+		hc:        hc,
+		sem:       make(chan struct{}, maxConcurrent),
+		waiters:   make([]*queueWaiter, 0, maxQueue),
+		maxQueue:  maxQueue,
 	}, nil
 }
 
@@ -160,6 +193,11 @@ func (c *Client) do(ctx context.Context, action string, body []byte, headers htt
 		return nil, internalerrors.New(internalerrors.ErrInternalError, "upstream client sleeper is not initialized", nil)
 	}
 
+	if err := c.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer c.release()
+
 	maxRetry := c.maxRetry
 	if maxRetry < 0 {
 		maxRetry = 0
@@ -182,6 +220,65 @@ func (c *Client) do(ctx context.Context, action string, body []byte, headers htt
 	}
 
 	return nil, internalerrors.New(internalerrors.ErrInternalError, "unreachable upstream retry state", nil)
+}
+
+func (c *Client) acquire(ctx context.Context) error {
+	if c.sem == nil {
+		return nil
+	}
+
+	c.mu.Lock()
+
+	select {
+	case c.sem <- struct{}{}:
+		c.mu.Unlock()
+		return nil
+	default:
+	}
+
+	if len(c.waiters) >= c.maxQueue {
+		c.mu.Unlock()
+		return internalerrors.New(internalerrors.ErrRateLimited, "upstream queue is full", nil)
+	}
+
+	w := &queueWaiter{ready: make(chan struct{})}
+	c.waiters = append(c.waiters, w)
+	c.mu.Unlock()
+
+	select {
+	case <-w.ready:
+		return nil
+	case <-ctx.Done():
+		c.removeWaiter(w)
+		return internalerrors.New(internalerrors.ErrUpstreamFailed, "context cancelled while waiting in queue", ctx.Err())
+	}
+}
+
+func (c *Client) removeWaiter(w *queueWaiter) {
+	c.mu.Lock()
+	for i, waiter := range c.waiters {
+		if waiter == w {
+			c.waiters = append(c.waiters[:i], c.waiters[i+1:]...)
+			break
+		}
+	}
+	c.mu.Unlock()
+}
+
+func (c *Client) release() {
+	if c.sem == nil {
+		return
+	}
+
+	<-c.sem
+
+	c.mu.Lock()
+	if len(c.waiters) > 0 {
+		w := c.waiters[0]
+		c.waiters = c.waiters[1:]
+		close(w.ready)
+	}
+	c.mu.Unlock()
 }
 
 func (c *Client) doOnce(ctx context.Context, action string, body []byte, headers http.Header) (*Response, error) {

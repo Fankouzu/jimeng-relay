@@ -4,40 +4,47 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	EnvAccessKey           = "VOLC_ACCESSKEY"
-	EnvSecretKey           = "VOLC_SECRETKEY"
-	EnvRegion              = "VOLC_REGION"
-	EnvHost                = "VOLC_HOST"
-	EnvTimeout             = "VOLC_TIMEOUT"
-	EnvServerPort          = "SERVER_PORT"
-	EnvDatabaseType        = "DATABASE_TYPE"
-	EnvDatabaseURL         = "DATABASE_URL"
-	EnvAPIKeyEncryptionKey = "API_KEY_ENCRYPTION_KEY"
+	EnvAccessKey             = "VOLC_ACCESSKEY"
+	EnvSecretKey             = "VOLC_SECRETKEY"
+	EnvRegion                = "VOLC_REGION"
+	EnvHost                  = "VOLC_HOST"
+	EnvTimeout               = "VOLC_TIMEOUT"
+	EnvServerPort            = "SERVER_PORT"
+	EnvDatabaseType          = "DATABASE_TYPE"
+	EnvDatabaseURL           = "DATABASE_URL"
+	EnvAPIKeyEncryptionKey   = "API_KEY_ENCRYPTION_KEY"
+	EnvUpstreamMaxConcurrent = "UPSTREAM_MAX_CONCURRENT"
+	EnvUpstreamMaxQueue      = "UPSTREAM_MAX_QUEUE"
 )
 
 const (
-	DefaultRegion       = "cn-north-1"
-	DefaultHost         = "visual.volcengineapi.com"
-	DefaultTimeout      = 30 * time.Second
-	DefaultServerPort   = "8080"
-	DefaultDatabaseType = "sqlite"
-	DefaultDatabaseURL  = "./jimeng-relay.db"
+	DefaultRegion                = "cn-north-1"
+	DefaultHost                  = "visual.volcengineapi.com"
+	DefaultTimeout               = 30 * time.Second
+	DefaultServerPort            = "8080"
+	DefaultDatabaseType          = "sqlite"
+	DefaultDatabaseURL           = "./jimeng-relay.db"
+	DefaultUpstreamMaxConcurrent = 10
+	DefaultUpstreamMaxQueue      = 100
 )
 
 type Config struct {
-	Credentials         Credentials
-	Region              string
-	Host                string
-	Timeout             time.Duration
-	ServerPort          string
-	DatabaseType        string
-	DatabaseURL         string
-	APIKeyEncryptionKey string
+	Credentials           Credentials
+	Region                string
+	Host                  string
+	Timeout               time.Duration
+	ServerPort            string
+	DatabaseType          string
+	DatabaseURL           string
+	APIKeyEncryptionKey   string
+	UpstreamMaxConcurrent int
+	UpstreamMaxQueue      int
 }
 
 func (c Config) LogValue() slog.Value {
@@ -50,6 +57,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("database_type", c.DatabaseType),
 		slog.String("database_url", c.DatabaseURL),
 		slog.String("api_key_encryption_key", "***"),
+		slog.Int("upstream_max_concurrent", c.UpstreamMaxConcurrent),
+		slog.Int("upstream_max_queue", c.UpstreamMaxQueue),
 	)
 }
 
@@ -68,23 +77,24 @@ type Options struct {
 
 func Load(opts Options) (Config, error) {
 	cfg := Config{
-		Region:       DefaultRegion,
-		Host:         DefaultHost,
-		Timeout:      DefaultTimeout,
-		ServerPort:   DefaultServerPort,
-		DatabaseType: DefaultDatabaseType,
-		DatabaseURL:  DefaultDatabaseURL,
+		Region:                DefaultRegion,
+		Host:                  DefaultHost,
+		Timeout:               DefaultTimeout,
+		ServerPort:            DefaultServerPort,
+		DatabaseType:          DefaultDatabaseType,
+		DatabaseURL:           DefaultDatabaseURL,
+		UpstreamMaxConcurrent: DefaultUpstreamMaxConcurrent,
+		UpstreamMaxQueue:      DefaultUpstreamMaxQueue,
 	}
 
 	envFile := ".env"
 	if opts.ConfigFile != nil && *opts.ConfigFile != "" {
 		envFile = *opts.ConfigFile
 	}
-	if err := loadEnvFile(envFile); err != nil {
+	if err := LoadEnvFile(envFile); err != nil {
 		return Config{}, err
 	}
 
-	// Load from environment variables
 	if v, ok := lookupEnvNonEmpty(EnvRegion); ok {
 		cfg.Region = v
 	}
@@ -110,8 +120,21 @@ func Load(opts Options) (Config, error) {
 	if v, ok := lookupEnvNonEmpty(EnvAPIKeyEncryptionKey); ok {
 		cfg.APIKeyEncryptionKey = v
 	}
+	if v, ok := lookupEnvNonEmpty(EnvUpstreamMaxConcurrent); ok {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid %s: %w", EnvUpstreamMaxConcurrent, err)
+		}
+		cfg.UpstreamMaxConcurrent = n
+	}
+	if v, ok := lookupEnvNonEmpty(EnvUpstreamMaxQueue); ok {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid %s: %w", EnvUpstreamMaxQueue, err)
+		}
+		cfg.UpstreamMaxQueue = n
+	}
 
-	// Override with options (flags)
 	if opts.Region != nil {
 		v := strings.TrimSpace(*opts.Region)
 		if v == "" {
@@ -188,7 +211,9 @@ func lookupEnvNonEmpty(key string) (string, bool) {
 	return v, true
 }
 
-func loadEnvFile(path string) error {
+// LoadEnvFile loads environment variables from a file into os.Environ.
+// It skips lines that are empty, comments, or already set in the environment.
+func LoadEnvFile(path string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

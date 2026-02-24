@@ -44,7 +44,7 @@ func TestRedactingHandler(t *testing.T) {
 	if !ok {
 		t.Fatalf("authorization should be string, got %T", result["authorization"])
 	}
-	if !strings.HasSuffix(auth, "...") || len(auth) != 23 {
+	if auth != "***" {
 		t.Errorf("authorization not correctly redacted: %s", auth)
 	}
 
