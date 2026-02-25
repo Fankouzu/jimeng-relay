@@ -450,7 +450,7 @@ func newSignedRequestWithCredentialScope(t *testing.T, method, target string, bo
 		sha256Hex([]byte(canon)),
 	}, "\n")
 
-	signingKey := deriveSigningKey(secret, dateShort, region, service)
+	signingKey := deriveSigningKey(secret, dateShort, region, service, "aws4_request")
 	signature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+accessKey+"/"+scope+", SignedHeaders="+strings.Join(signedHeaders, ";")+", Signature="+signature)
 	return req

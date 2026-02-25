@@ -28,6 +28,7 @@ import (
 	apikeyservice "github.com/jimeng-relay/server/internal/service/apikey"
 	auditservice "github.com/jimeng-relay/server/internal/service/audit"
 	idempotencyservice "github.com/jimeng-relay/server/internal/service/idempotency"
+	"github.com/jimeng-relay/server/internal/service/keymanager"
 )
 
 func main() {
@@ -81,7 +82,8 @@ func runServer() error {
 
 	auditSvc := auditservice.NewService(repos.DownstreamRequests, repos.UpstreamAttempts, repos.AuditEvents, auditservice.Config{})
 	idempotencySvc := idempotencyservice.NewService(repos.IdempotencyRecords, idempotencyservice.Config{})
-	upstreamClient, err := upstream.NewClient(cfg, upstream.Options{})
+	keyManager := keymanager.NewService(logger)
+	upstreamClient, err := upstream.NewClient(cfg, upstream.Options{KeyManager: keyManager})
 	if err != nil {
 		return fmt.Errorf("init upstream client: %w", err)
 	}
@@ -108,6 +110,8 @@ func runServer() error {
 	mux.Handle("/", obs(authn(app)))
 
 	log.Printf("Starting jimeng-relay server on port %s...", cfg.ServerPort)
+	log.Printf("Upstream concurrent limit: %d, queue size: %d", cfg.UpstreamMaxConcurrent, cfg.UpstreamMaxQueue)
+	log.Printf("Upstream submit min interval: %s", cfg.UpstreamSubmitMinInterval)
 	log.Printf("API key lifecycle is managed via CLI: ./jimeng-server key ...")
 	log.Printf("Registered relay submit routes: POST /v1/submit, POST /?Action=CVSync2AsyncSubmitTask")
 	log.Printf("Registered relay get-result routes: POST /v1/get-result, POST /?Action=CVSync2AsyncGetResult")

@@ -2,7 +2,6 @@ package sigv4
 
 import (
 	"bytes"
-	"log"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -22,9 +21,9 @@ import (
 )
 
 const (
-	defaultClockSkew = 5 * time.Minute
-	xDateLayout      = "20060102T150405Z"
-	maxSignedBodyBytes int64 = 2 << 20
+	defaultClockSkew         = 5 * time.Minute
+	xDateLayout              = "20060102T150405Z"
+	maxSignedBodyBytes int64 = 10 << 20
 )
 
 type contextKey string
@@ -134,7 +133,6 @@ func (m *Middleware) verify(r *http.Request) error {
 	if err != nil {
 		return internalerrors.New(internalerrors.ErrAuthFailed, "read request body", err)
 	}
-	log.Printf("DEBUG: raw body: %s", string(body))
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	payloadHash := sha256Hex(body)
 	headerPayloadHash := strings.TrimSpace(r.Header.Get("X-Content-Sha256"))
@@ -173,8 +171,6 @@ func (m *Middleware) verify(r *http.Request) error {
 	if err != nil {
 		return internalerrors.New(internalerrors.ErrAuthFailed, "build canonical request", err)
 	}
-	log.Printf("DEBUG: canonical request: %s", canonicalRequest)
-	log.Printf("DEBUG: payload hash: %s", payloadHash)
 	scope := strings.Join([]string{fields.dateScope, fields.region, fields.service, fields.scopeSuffix}, "/")
 	// Use algorithm name based on scope suffix
 	algorithm := "AWS4-HMAC-SHA256"
@@ -188,20 +184,7 @@ func (m *Middleware) verify(r *http.Request) error {
 		sha256Hex([]byte(canonicalRequest)),
 	}, "\n")
 	signingKey := deriveSigningKey(secretKey, fields.dateScope, fields.region, fields.service, fields.scopeSuffix)
-	log.Printf("DEBUG: stringToSign: %s", stringToSign)
-	log.Printf("DEBUG: stringToSign hex: %x", stringToSign)
-	log.Printf("DEBUG: signing key: %x", signingKey)
 	expectedSignature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
-	// DEBUG: signature validation
-	log.Printf("DEBUG: signature mismatch")
-	log.Printf("DEBUG: expected signature: %s", strings.ToLower(expectedSignature))
-	log.Printf("DEBUG: received signature: %s", strings.ToLower(fields.signature))
-	log.Printf("DEBUG: scope suffix: %s", fields.scopeSuffix)
-	log.Printf("DEBUG: algorithm: %s", algorithm)
-	log.Printf("DEBUG: secret key (decrypted): %s", secretKey)
-	log.Printf("DEBUG: date scope: %s", fields.dateScope)
-	log.Printf("DEBUG: region: %s", fields.region)
-	log.Printf("DEBUG: service: %s", fields.service)
 	if !constantTimeHexEqual(fields.signature, expectedSignature) {
 		return internalerrors.New(internalerrors.ErrInvalidSignature, "signature mismatch", nil)
 	}
@@ -348,25 +331,15 @@ func awsEscape(s string) string {
 }
 
 func deriveSigningKey(secret, date, region, service, suffix string) []byte {
-	log.Printf("DEBUG deriveSigningKey: secret=%s, date=%s, region=%s, service=%s, suffix=%s", secret, date, region, service, suffix)
-	log.Printf("DEBUG secret bytes: %x", []byte(secret))
-	log.Printf("DEBUG date bytes: %x", []byte(date))
-	// Volc SDK uses no prefix, AWS4 uses "AWS4" prefix
 	var kDate []byte
 	if suffix == "request" {
 		kDate = hmacSHA256([]byte(secret), date)
-		log.Printf("DEBUG HMAC(secret, date) = %x", kDate)
 	} else {
 		kDate = hmacSHA256([]byte("AWS4"+secret), date)
 	}
-	log.Printf("DEBUG kDate: %x", kDate)
 	kRegion := hmacSHA256(kDate, region)
-	log.Printf("DEBUG kRegion: %x", kRegion)
 	kService := hmacSHA256(kRegion, service)
-	log.Printf("DEBUG kService: %x", kService)
-	result := hmacSHA256(kService, suffix)
-	log.Printf("DEBUG result: %x", result)
-	return result
+	return hmacSHA256(kService, suffix)
 }
 
 func hmacSHA256(key []byte, message string) []byte {

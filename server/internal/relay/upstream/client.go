@@ -17,6 +17,7 @@ import (
 
 	"github.com/jimeng-relay/server/internal/config"
 	internalerrors "github.com/jimeng-relay/server/internal/errors"
+	"github.com/jimeng-relay/server/internal/service/keymanager"
 )
 
 const (
@@ -37,14 +38,16 @@ const (
 )
 
 type Options struct {
-	HTTPClient    *http.Client
-	Now           func() time.Time
-	Sleep         func(context.Context, time.Duration) error
-	MaxRetries    int
-	Service       string
-	Version       string
-	MaxConcurrent int
-	MaxQueue      int
+	HTTPClient        *http.Client
+	Now               func() time.Time
+	Sleep             func(context.Context, time.Duration) error
+	MaxRetries        int
+	Service           string
+	Version           string
+	MaxConcurrent     int
+	MaxQueue          int
+	SubmitMinInterval time.Duration
+	KeyManager        *keymanager.Service
 }
 
 type queueWaiter struct {
@@ -63,10 +66,17 @@ type Client struct {
 	maxRetry int
 	hc       *http.Client
 
-	mu      sync.Mutex
-	sem     chan struct{}
-	waiters []*queueWaiter
+	mu       sync.Mutex
+	sem      chan struct{}
+	waiters  []*queueWaiter
 	maxQueue int
+
+	km *keymanager.Service
+
+	submitMinInterval time.Duration
+
+	submitMu     sync.Mutex
+	lastSubmitAt time.Time
 }
 
 type Response struct {
@@ -153,20 +163,33 @@ func NewClient(cfg config.Config, opts Options) (*Client, error) {
 		maxQueue = defaultMaxQueue
 	}
 
+	submitMinInterval := opts.SubmitMinInterval
+	if submitMinInterval < 0 {
+		submitMinInterval = 0
+	}
+	if submitMinInterval == 0 {
+		submitMinInterval = cfg.UpstreamSubmitMinInterval
+	}
+	if submitMinInterval < 0 {
+		submitMinInterval = 0
+	}
+
 	return &Client{
-		ak:        strings.TrimSpace(cfg.Credentials.AccessKey),
-		sk:        strings.TrimSpace(cfg.Credentials.SecretKey),
-		region:    strings.TrimSpace(cfg.Region),
-		service:   service,
-		version:   version,
-		baseURL:   baseURL,
-		now:       nowFn,
-		sleep:     sleepFn,
-		maxRetry:  maxRetry,
-		hc:        hc,
-		sem:       make(chan struct{}, maxConcurrent),
-		waiters:   make([]*queueWaiter, 0, maxQueue),
-		maxQueue:  maxQueue,
+		ak:                strings.TrimSpace(cfg.Credentials.AccessKey),
+		sk:                strings.TrimSpace(cfg.Credentials.SecretKey),
+		region:            strings.TrimSpace(cfg.Region),
+		service:           service,
+		version:           version,
+		baseURL:           baseURL,
+		now:               nowFn,
+		sleep:             sleepFn,
+		maxRetry:          maxRetry,
+		hc:                hc,
+		sem:               make(chan struct{}, maxConcurrent),
+		waiters:           make([]*queueWaiter, 0, maxQueue),
+		maxQueue:          maxQueue,
+		km:                opts.KeyManager,
+		submitMinInterval: submitMinInterval,
 	}, nil
 }
 
@@ -193,10 +216,28 @@ func (c *Client) do(ctx context.Context, action string, body []byte, headers htt
 		return nil, internalerrors.New(internalerrors.ErrInternalError, "upstream client sleeper is not initialized", nil)
 	}
 
-	if err := c.acquire(ctx); err != nil {
-		return nil, err
+	useRelayActionsGate := action == actionSubmit || action == actionGetResult
+	if useRelayActionsGate && c.km != nil {
+		apiKeyID := strings.TrimSpace(GetAPIKeyID(ctx))
+		keyHandle, err := c.km.AcquireKey(ctx, apiKeyID, "")
+		if err != nil {
+			return nil, err
+		}
+		defer keyHandle.Release()
 	}
-	defer c.release()
+
+	if useRelayActionsGate {
+		if err := c.acquire(ctx); err != nil {
+			return nil, err
+		}
+		defer c.release()
+	}
+
+	if action == actionSubmit {
+		if err := c.waitSubmitInterval(ctx); err != nil {
+			return nil, internalerrors.New(internalerrors.ErrUpstreamFailed, "context done while waiting for submit interval", err)
+		}
+	}
 
 	maxRetry := c.maxRetry
 	if maxRetry < 0 {
@@ -243,24 +284,47 @@ func (c *Client) acquire(ctx context.Context) error {
 
 	w := &queueWaiter{ready: make(chan struct{})}
 	c.waiters = append(c.waiters, w)
+	queuePos := len(c.waiters)
 	c.mu.Unlock()
+
+	_ = queuePos
 
 	select {
 	case <-w.ready:
 		return nil
 	case <-ctx.Done():
-		c.removeWaiter(w)
+		if removed := c.removeWaiter(w); !removed {
+			c.reassignCancelledWaiterSlot()
+		}
 		return internalerrors.New(internalerrors.ErrUpstreamFailed, "context cancelled while waiting in queue", ctx.Err())
 	}
 }
 
-func (c *Client) removeWaiter(w *queueWaiter) {
+func (c *Client) removeWaiter(w *queueWaiter) bool {
 	c.mu.Lock()
 	for i, waiter := range c.waiters {
 		if waiter == w {
 			c.waiters = append(c.waiters[:i], c.waiters[i+1:]...)
-			break
+			c.mu.Unlock()
+			return true
 		}
+	}
+	c.mu.Unlock()
+	return false
+}
+
+func (c *Client) reassignCancelledWaiterSlot() {
+	c.mu.Lock()
+	if len(c.waiters) > 0 {
+		w := c.waiters[0]
+		c.waiters = c.waiters[1:]
+		close(w.ready)
+		c.mu.Unlock()
+		return
+	}
+	select {
+	case <-c.sem:
+	default:
 	}
 	c.mu.Unlock()
 }
@@ -269,16 +333,47 @@ func (c *Client) release() {
 	if c.sem == nil {
 		return
 	}
-
-	<-c.sem
-
 	c.mu.Lock()
 	if len(c.waiters) > 0 {
 		w := c.waiters[0]
 		c.waiters = c.waiters[1:]
 		close(w.ready)
+		c.mu.Unlock()
+		return
 	}
+	<-c.sem
 	c.mu.Unlock()
+}
+
+func (c *Client) waitSubmitInterval(ctx context.Context) error {
+	if c.submitMinInterval <= 0 {
+		return nil
+	}
+
+	for {
+		now := c.now().UTC()
+
+		c.submitMu.Lock()
+		if c.lastSubmitAt.IsZero() {
+			c.lastSubmitAt = now
+			c.submitMu.Unlock()
+			return nil
+		}
+
+		next := c.lastSubmitAt.Add(c.submitMinInterval)
+		if !now.Before(next) {
+			c.lastSubmitAt = now
+			c.submitMu.Unlock()
+			return nil
+		}
+
+		waitFor := next.Sub(now)
+		c.submitMu.Unlock()
+
+		if err := c.sleep(ctx, waitFor); err != nil {
+			return err
+		}
+	}
 }
 
 func (c *Client) doOnce(ctx context.Context, action string, body []byte, headers http.Header) (*Response, error) {

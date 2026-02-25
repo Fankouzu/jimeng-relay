@@ -24,10 +24,12 @@ type fakeGetResultClient struct {
 	calls      int
 	reqBody    []byte
 	reqHeaders http.Header
+	ctx        context.Context
 }
 
-func (f *fakeGetResultClient) GetResult(_ context.Context, body []byte, headers http.Header) (*upstream.Response, error) {
+func (f *fakeGetResultClient) GetResult(ctx context.Context, body []byte, headers http.Header) (*upstream.Response, error) {
 	f.calls++
+	f.ctx = ctx
 	f.reqBody = append([]byte(nil), body...)
 	f.reqHeaders = headers.Clone()
 	return f.resp, f.err
@@ -74,6 +76,9 @@ func TestGetResultHandler_PassthroughSuccess(t *testing.T) {
 	}
 	if fake.reqHeaders.Get("Authorization") != "" {
 		t.Fatalf("authorization header should not be forwarded to upstream client")
+	}
+	if got := upstream.GetAPIKeyID(fake.ctx); got != "k1" {
+		t.Fatalf("expected apiKeyID k1 in upstream context, got %q", got)
 	}
 	if len(dsRepo.created) != 1 || len(usRepo.created) != 1 || len(aeRepo.created) != 1 {
 		t.Fatalf("expected full audit chain writes, got downstream=%d upstream=%d events=%d", len(dsRepo.created), len(usRepo.created), len(aeRepo.created))
@@ -158,6 +163,40 @@ func TestGetResultHandler_UpstreamNetworkError(t *testing.T) {
 	}
 }
 
+func TestGetResultHandler_KeyRevokedError_PropagatesUnauthorized(t *testing.T) {
+	fake := &fakeGetResultClient{
+		err: internalerrors.New(internalerrors.ErrKeyRevoked, "api key revoked", nil),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewGetResultHandler(fake, auditSvc, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/get-result", bytes.NewReader([]byte(`{"task_id":"t1"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	errorObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error object, got %T", payload["error"])
+	}
+	code, ok := errorObj["code"].(string)
+	if !ok {
+		t.Fatalf("expected error code string, got %T", errorObj["code"])
+	}
+	if code != string(internalerrors.ErrKeyRevoked) {
+		t.Fatalf("expected error code %q, got %q", internalerrors.ErrKeyRevoked, code)
+	}
+}
+
 func TestGetResultHandler_CompatibleActionPath(t *testing.T) {
 	upstreamBody := []byte(`{"code":10000,"message":"ok","data":{"status":"done"}}`)
 	fake := &fakeGetResultClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
@@ -213,6 +252,38 @@ func TestGetResultHandler_AuditFailure_FailClosed(t *testing.T) {
 	}
 	if code != string(internalerrors.ErrAuditFailed) {
 		t.Fatalf("expected error code %q, got %q", internalerrors.ErrAuditFailed, code)
+	}
+}
+
+func TestGetResultHandler_MissingAPIKey(t *testing.T) {
+	fake := &fakeGetResultClient{}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewGetResultHandler(fake, auditSvc, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/get-result", bytes.NewReader([]byte(`{"task_id":"task_123"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	// No APIKeyID in context
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	errorObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error object, got %T", payload["error"])
+	}
+	code, ok := errorObj["code"].(string)
+	if !ok {
+		t.Fatalf("expected error code string, got %T", errorObj["code"])
+	}
+	if code != string(internalerrors.ErrAuthFailed) {
+		t.Fatalf("expected error code %q, got %q", internalerrors.ErrAuthFailed, code)
 	}
 }
 
@@ -283,3 +354,111 @@ func TestGetResultHandler_FakeUpstreamContract_Passthrough(t *testing.T) {
 		})
 	}
 }
+func TestGetResultHandler_RateLimitedError_PropagatesTooManyRequests(t *testing.T) {
+	fake := &fakeGetResultClient{
+		err: internalerrors.New(internalerrors.ErrRateLimited, "rate limit exceeded", nil),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewGetResultHandler(fake, auditSvc, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/get-result", bytes.NewReader([]byte(`{"task_id":"t1"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	errorObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error object, got %T", payload["error"])
+	}
+	code, ok := errorObj["code"].(string)
+	if !ok {
+		t.Fatalf("expected error code string, got %T", errorObj["code"])
+	}
+	if code != string(internalerrors.ErrRateLimited) {
+		t.Fatalf("expected error code %q, got %q", internalerrors.ErrRateLimited, code)
+	}
+}
+func TestGetResultHandler_StatusMapping(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		expectedStatus int
+		expectedCode   internalerrors.Code
+	}{
+		{
+			name:           "key expired -> 401",
+			err:            internalerrors.New(internalerrors.ErrKeyExpired, "key expired", nil),
+			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   internalerrors.ErrKeyExpired,
+		},
+		{
+			name:           "invalid signature -> 401",
+			err:            internalerrors.New(internalerrors.ErrInvalidSignature, "invalid signature", nil),
+			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   internalerrors.ErrInvalidSignature,
+		},
+		{
+			name:           "validation failed -> 400",
+			err:            internalerrors.New(internalerrors.ErrValidationFailed, "invalid input", nil),
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   internalerrors.ErrValidationFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeGetResultClient{err: tt.err}
+			auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+			h := NewGetResultHandler(fake, auditSvc, nil).Routes()
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/get-result", bytes.NewReader([]byte(`{"task_id":"t1"}`)))
+			req.Header.Set("Content-Type", "application/json")
+			req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+			rec := httptest.NewRecorder()
+
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.expectedStatus {
+				t.Fatalf("expected status %d, got %d body=%s", tt.expectedStatus, rec.Code, rec.Body.String())
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("json.Unmarshal response: %v", err)
+			}
+			errorObj := payload["error"].(map[string]any)
+			if errorObj["code"].(string) != string(tt.expectedCode) {
+				t.Fatalf("expected error code %q, got %q", tt.expectedCode, errorObj["code"])
+			}
+		})
+	}
+}
+
+func TestGetResultHandler_WrappedRateLimited_ReturnsBadGateway(t *testing.T) {
+	fake := &fakeGetResultClient{
+		err: internalerrors.New(internalerrors.ErrUpstreamFailed, "wrapped", internalerrors.New(internalerrors.ErrRateLimited, "rate limit", nil)),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewGetResultHandler(fake, auditSvc, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/get-result", bytes.NewReader([]byte(`{"task_id":"t1"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502 for wrapped error, got %d", rec.Code)
+	}
+}
+
+

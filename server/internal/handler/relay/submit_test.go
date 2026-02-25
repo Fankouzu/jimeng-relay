@@ -128,7 +128,7 @@ func (r *recordingIdempotencyRepo) DeleteExpired(_ context.Context, _ time.Time)
 
 func newTestAuditService(t *testing.T, dsErr, usErr, aeErr error) (*auditservice.Service, *recordingDownstreamRepo, *recordingUpstreamRepo, *recordingAuditRepo) {
 	t.Helper()
-	base := time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC)
+	base := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	ds := &recordingDownstreamRepo{err: dsErr}
 	us := &recordingUpstreamRepo{err: usErr}
 	ae := &recordingAuditRepo{err: aeErr}
@@ -144,12 +144,14 @@ type fakeSubmitClient struct {
 	calls      int
 	reqBody    []byte
 	reqHeaders http.Header
+	apiKeyID   string
 }
 
-func (f *fakeSubmitClient) Submit(_ context.Context, body []byte, headers http.Header) (*upstream.Response, error) {
+func (f *fakeSubmitClient) Submit(ctx context.Context, body []byte, headers http.Header) (*upstream.Response, error) {
 	f.calls++
 	f.reqBody = append([]byte(nil), body...)
 	f.reqHeaders = headers.Clone()
+	f.apiKeyID = upstream.GetAPIKeyID(ctx)
 	return f.resp, f.err
 }
 
@@ -196,6 +198,9 @@ func TestSubmitHandler_PassthroughSuccess(t *testing.T) {
 	}
 	if fake.reqHeaders.Get("Authorization") != "" {
 		t.Fatalf("authorization header should not be forwarded to upstream client")
+	}
+	if fake.apiKeyID != "k1" {
+		t.Fatalf("expected apiKeyID k1, got %q", fake.apiKeyID)
 	}
 	if len(dsRepo.created) != 1 || len(usRepo.created) != 1 || len(aeRepo.created) != 1 {
 		t.Fatalf("expected full audit chain writes, got downstream=%d upstream=%d events=%d", len(dsRepo.created), len(usRepo.created), len(aeRepo.created))
@@ -277,6 +282,40 @@ func TestSubmitHandler_UpstreamNetworkError(t *testing.T) {
 	}
 	if code != string(internalerrors.ErrUpstreamFailed) {
 		t.Fatalf("expected error code %q, got %q", internalerrors.ErrUpstreamFailed, code)
+	}
+}
+
+func TestSubmitHandler_KeyRevokedError_PropagatesUnauthorized(t *testing.T) {
+	fake := &fakeSubmitClient{
+		err: internalerrors.New(internalerrors.ErrKeyRevoked, "api key revoked", nil),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	errorObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error object, got %T", payload["error"])
+	}
+	code, ok := errorObj["code"].(string)
+	if !ok {
+		t.Fatalf("expected error code string, got %T", errorObj["code"])
+	}
+	if code != string(internalerrors.ErrKeyRevoked) {
+		t.Fatalf("expected error code %q, got %q", internalerrors.ErrKeyRevoked, code)
 	}
 }
 
@@ -411,7 +450,8 @@ func TestSubmitHandler_IdempotencyReplaySameHash(t *testing.T) {
 	fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
 	auditSvc, dsRepo, usRepo, aeRepo := newTestAuditService(t, nil, nil, nil)
 	idemRepo := newRecordingIdempotencyRepo()
-	idemSvc := idempotencyservice.NewService(idemRepo, idempotencyservice.Config{Now: func() time.Time { return time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC) }})
+	base := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	idemSvc := idempotencyservice.NewService(idemRepo, idempotencyservice.Config{Now: func() time.Time { return base }})
 	h := NewSubmitHandler(fake, auditSvc, idemSvc, idemRepo, nil).Routes()
 
 	body := []byte(`{"prompt":"cat","req_key":"jimeng_t2i_v40"}`)
@@ -461,7 +501,8 @@ func TestSubmitHandler_IdempotencyHashMismatchReturnsValidationError(t *testing.
 	fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
 	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
 	idemRepo := newRecordingIdempotencyRepo()
-	idemSvc := idempotencyservice.NewService(idemRepo, idempotencyservice.Config{Now: func() time.Time { return time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC) }})
+	base := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	idemSvc := idempotencyservice.NewService(idemRepo, idempotencyservice.Config{Now: func() time.Time { return base }})
 	h := NewSubmitHandler(fake, auditSvc, idemSvc, idemRepo, nil).Routes()
 
 	req1 := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
@@ -507,3 +548,163 @@ func TestSubmitHandler_IdempotencyHashMismatchReturnsValidationError(t *testing.
 		t.Fatalf("expected hash mismatch to skip upstream call, got calls=%d", fake.calls)
 	}
 }
+
+func TestSubmitHandler_MissingAPIKeyID(t *testing.T) {
+	fake := &fakeSubmitClient{}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	// No APIKeyID in context
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	errorObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error object, got %T", payload["error"])
+	}
+	code, ok := errorObj["code"].(string)
+	if !ok {
+		t.Fatalf("expected error code string, got %T", errorObj["code"])
+	}
+	if code != string(internalerrors.ErrAuthFailed) {
+		t.Fatalf("expected error code %q, got %q", internalerrors.ErrAuthFailed, code)
+	}
+}
+
+func TestSubmitHandler_EmptyAPIKeyID(t *testing.T) {
+	fake := &fakeSubmitClient{}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	// Empty APIKeyID in context
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "  "))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+func TestSubmitHandler_RateLimitedError_PropagatesTooManyRequests(t *testing.T) {
+	fake := &fakeSubmitClient{
+		err: internalerrors.New(internalerrors.ErrRateLimited, "rate limit exceeded", nil),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	errorObj, ok := payload["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error object, got %T", payload["error"])
+	}
+	code, ok := errorObj["code"].(string)
+	if !ok {
+		t.Fatalf("expected error code string, got %T", errorObj["code"])
+	}
+	if code != string(internalerrors.ErrRateLimited) {
+		t.Fatalf("expected error code %q, got %q", internalerrors.ErrRateLimited, code)
+	}
+}
+func TestSubmitHandler_StatusMapping(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		expectedStatus int
+		expectedCode   internalerrors.Code
+	}{
+		{
+			name:           "key expired -> 401",
+			err:            internalerrors.New(internalerrors.ErrKeyExpired, "key expired", nil),
+			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   internalerrors.ErrKeyExpired,
+		},
+		{
+			name:           "invalid signature -> 401",
+			err:            internalerrors.New(internalerrors.ErrInvalidSignature, "invalid signature", nil),
+			expectedStatus: http.StatusUnauthorized,
+			expectedCode:   internalerrors.ErrInvalidSignature,
+		},
+		{
+			name:           "validation failed -> 400",
+			err:            internalerrors.New(internalerrors.ErrValidationFailed, "invalid input", nil),
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   internalerrors.ErrValidationFailed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeSubmitClient{err: tt.err}
+			auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+			h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+			req.Header.Set("Content-Type", "application/json")
+			req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+			rec := httptest.NewRecorder()
+
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.expectedStatus {
+				t.Fatalf("expected status %d, got %d body=%s", tt.expectedStatus, rec.Code, rec.Body.String())
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("json.Unmarshal response: %v", err)
+			}
+			errorObj := payload["error"].(map[string]any)
+			if errorObj["code"].(string) != string(tt.expectedCode) {
+				t.Fatalf("expected error code %q, got %q", tt.expectedCode, errorObj["code"])
+			}
+		})
+	}
+}
+func TestSubmitHandler_WrappedRateLimited_ReturnsBadGateway(t *testing.T) {
+	// If we wrap a specific error in ErrUpstreamFailed, it should return 502, not the specific status.
+	// This ensures that our handler logic for NOT wrapping is what's providing the 429.
+	fake := &fakeSubmitClient{
+		err: internalerrors.New(internalerrors.ErrUpstreamFailed, "wrapped", internalerrors.New(internalerrors.ErrRateLimited, "rate limit", nil)),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502 for wrapped error, got %d", rec.Code)
+	}
+}
+
+
+

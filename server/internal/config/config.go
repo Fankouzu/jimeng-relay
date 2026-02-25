@@ -10,41 +10,50 @@ import (
 )
 
 const (
-	EnvAccessKey             = "VOLC_ACCESSKEY"
-	EnvSecretKey             = "VOLC_SECRETKEY"
-	EnvRegion                = "VOLC_REGION"
-	EnvHost                  = "VOLC_HOST"
-	EnvTimeout               = "VOLC_TIMEOUT"
-	EnvServerPort            = "SERVER_PORT"
-	EnvDatabaseType          = "DATABASE_TYPE"
-	EnvDatabaseURL           = "DATABASE_URL"
-	EnvAPIKeyEncryptionKey   = "API_KEY_ENCRYPTION_KEY"
-	EnvUpstreamMaxConcurrent = "UPSTREAM_MAX_CONCURRENT"
-	EnvUpstreamMaxQueue      = "UPSTREAM_MAX_QUEUE"
+	EnvAccessKey                 = "VOLC_ACCESSKEY"
+	EnvSecretKey                 = "VOLC_SECRETKEY"
+	EnvRegion                    = "VOLC_REGION"
+	EnvHost                      = "VOLC_HOST"
+	EnvTimeout                   = "VOLC_TIMEOUT"
+	EnvServerPort                = "SERVER_PORT"
+	EnvDatabaseType              = "DATABASE_TYPE"
+	EnvDatabaseURL               = "DATABASE_URL"
+	EnvAPIKeyEncryptionKey       = "API_KEY_ENCRYPTION_KEY"
+	EnvUpstreamMaxConcurrent     = "UPSTREAM_MAX_CONCURRENT"
+	EnvUpstreamMaxQueue          = "UPSTREAM_MAX_QUEUE"
+	EnvUpstreamSubmitMinInterval = "UPSTREAM_SUBMIT_MIN_INTERVAL"
+	EnvPerKeyMaxConcurrent     = "PER_KEY_MAX_CONCURRENT"
+	EnvPerKeyMaxQueue          = "PER_KEY_MAX_QUEUE"
 )
 
 const (
-	DefaultRegion                = "cn-north-1"
-	DefaultHost                  = "visual.volcengineapi.com"
-	DefaultTimeout               = 30 * time.Second
-	DefaultServerPort            = "8080"
-	DefaultDatabaseType          = "sqlite"
-	DefaultDatabaseURL           = "./jimeng-relay.db"
-	DefaultUpstreamMaxConcurrent = 10
-	DefaultUpstreamMaxQueue      = 100
+	DefaultRegion                    = "cn-north-1"
+	DefaultHost                      = "visual.volcengineapi.com"
+	DefaultTimeout                   = 30 * time.Second
+	DefaultServerPort                = "8080"
+	DefaultDatabaseType              = "sqlite"
+	DefaultDatabaseURL               = "./jimeng-relay.db"
+	DefaultUpstreamMaxConcurrent     = 1
+	DefaultUpstreamMaxQueue          = 100
+	DefaultUpstreamSubmitMinInterval = 0 * time.Second
+	DefaultPerKeyMaxConcurrent     = 1
+	DefaultPerKeyMaxQueue          = 1
 )
 
 type Config struct {
-	Credentials           Credentials
-	Region                string
-	Host                  string
-	Timeout               time.Duration
-	ServerPort            string
-	DatabaseType          string
-	DatabaseURL           string
-	APIKeyEncryptionKey   string
-	UpstreamMaxConcurrent int
-	UpstreamMaxQueue      int
+	Credentials               Credentials
+	Region                    string
+	Host                      string
+	Timeout                   time.Duration
+	ServerPort                string
+	DatabaseType              string
+	DatabaseURL               string
+	APIKeyEncryptionKey       string
+	UpstreamMaxConcurrent     int
+	UpstreamMaxQueue          int
+	UpstreamSubmitMinInterval time.Duration
+	PerKeyMaxConcurrent     int
+	PerKeyMaxQueue          int
 }
 
 func (c Config) LogValue() slog.Value {
@@ -59,6 +68,9 @@ func (c Config) LogValue() slog.Value {
 		slog.String("api_key_encryption_key", "***"),
 		slog.Int("upstream_max_concurrent", c.UpstreamMaxConcurrent),
 		slog.Int("upstream_max_queue", c.UpstreamMaxQueue),
+		slog.String("upstream_submit_min_interval", c.UpstreamSubmitMinInterval.String()),
+		slog.Int("per_key_max_concurrent", c.PerKeyMaxConcurrent),
+		slog.Int("per_key_max_queue", c.PerKeyMaxQueue),
 	)
 }
 
@@ -77,14 +89,17 @@ type Options struct {
 
 func Load(opts Options) (Config, error) {
 	cfg := Config{
-		Region:                DefaultRegion,
-		Host:                  DefaultHost,
-		Timeout:               DefaultTimeout,
-		ServerPort:            DefaultServerPort,
-		DatabaseType:          DefaultDatabaseType,
-		DatabaseURL:           DefaultDatabaseURL,
-		UpstreamMaxConcurrent: DefaultUpstreamMaxConcurrent,
-		UpstreamMaxQueue:      DefaultUpstreamMaxQueue,
+		Region:                    DefaultRegion,
+		Host:                      DefaultHost,
+		Timeout:                   DefaultTimeout,
+		ServerPort:                DefaultServerPort,
+		DatabaseType:              DefaultDatabaseType,
+		DatabaseURL:               DefaultDatabaseURL,
+		UpstreamMaxConcurrent:     DefaultUpstreamMaxConcurrent,
+		UpstreamMaxQueue:          DefaultUpstreamMaxQueue,
+		UpstreamSubmitMinInterval: DefaultUpstreamSubmitMinInterval,
+		PerKeyMaxConcurrent:     DefaultPerKeyMaxConcurrent,
+		PerKeyMaxQueue:          DefaultPerKeyMaxQueue,
 	}
 
 	envFile := ".env"
@@ -133,6 +148,30 @@ func Load(opts Options) (Config, error) {
 			return Config{}, fmt.Errorf("invalid %s: %w", EnvUpstreamMaxQueue, err)
 		}
 		cfg.UpstreamMaxQueue = n
+	}
+	if v, ok := lookupEnvNonEmpty(EnvUpstreamSubmitMinInterval); ok {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid %s: %w", EnvUpstreamSubmitMinInterval, err)
+		}
+		if d < 0 {
+			return Config{}, fmt.Errorf("%s must be >= 0", EnvUpstreamSubmitMinInterval)
+		}
+		cfg.UpstreamSubmitMinInterval = d
+	}
+	if v, ok := lookupEnvNonEmpty(EnvPerKeyMaxConcurrent); ok {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid %s: %w", EnvPerKeyMaxConcurrent, err)
+		}
+		cfg.PerKeyMaxConcurrent = n
+	}
+	if v, ok := lookupEnvNonEmpty(EnvPerKeyMaxQueue); ok {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid %s: %w", EnvPerKeyMaxQueue, err)
+		}
+		cfg.PerKeyMaxQueue = n
 	}
 
 	if opts.Region != nil {

@@ -80,16 +80,17 @@ func (h *GetResultHandler) proxyGetResult(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	apiKeyID, ok := r.Context().Value(sigv4.ContextAPIKeyID).(string)
-	if !ok {
+	val := r.Context().Value(sigv4.ContextAPIKeyID)
+	apiKeyID, ok := val.(string)
+	if val != nil && !ok {
 		finalErr = internalerrors.New(internalerrors.ErrInternalError, "invalid api_key_id type in context", nil)
 		writeRelayError(w, finalErr, http.StatusInternalServerError)
 		return
 	}
 	apiKeyID = strings.TrimSpace(apiKeyID)
 	if apiKeyID == "" {
-		finalErr = internalerrors.New(internalerrors.ErrInternalError, "missing api_key_id in context", nil)
-		writeRelayError(w, finalErr, http.StatusInternalServerError)
+		finalErr = internalerrors.New(internalerrors.ErrAuthFailed, "missing api_key_id in context", nil)
+		writeRelayError(w, finalErr, http.StatusUnauthorized)
 		return
 	}
 
@@ -124,6 +125,7 @@ func (h *GetResultHandler) proxyGetResult(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	ctx = upstream.WithAPIKeyID(ctx, apiKeyID)
 	resp, callErr := h.client.GetResult(ctx, body, headers)
 	if resp != nil {
 		upstreamStatus = resp.StatusCode
@@ -148,6 +150,12 @@ func (h *GetResultHandler) proxyGetResult(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if callErr != nil {
+		code := internalerrors.GetCode(callErr)
+		if code != "" && code != internalerrors.ErrUnknown && code != internalerrors.ErrUpstreamFailed {
+			finalErr = callErr
+			writeRelayError(w, finalErr, 0)
+			return
+		}
 		finalErr = internalerrors.New(internalerrors.ErrUpstreamFailed, "get-result upstream request failed", callErr)
 		writeRelayError(w, finalErr, http.StatusBadGateway)
 		return

@@ -118,6 +118,9 @@ func writeRelayError(w http.ResponseWriter, err error, status int) {
 		code = internalerrors.ErrUnknown
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if status <= 0 {
+		status = ErrorToStatus(err)
+	}
 	w.WriteHeader(status)
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]any{
@@ -147,4 +150,22 @@ func readRequestBodyLimited(r *http.Request) ([]byte, error) {
 		return nil, errors.New("request body too large")
 	}
 	return body, nil
+}
+
+func ErrorToStatus(err error) int {
+	code := internalerrors.GetCode(err)
+	switch code {
+	case internalerrors.ErrAuthFailed, internalerrors.ErrKeyRevoked, internalerrors.ErrKeyExpired, internalerrors.ErrInvalidSignature:
+		return http.StatusUnauthorized
+	case internalerrors.ErrRateLimited:
+		return http.StatusTooManyRequests
+	case internalerrors.ErrValidationFailed:
+		return http.StatusBadRequest
+	case internalerrors.ErrUpstreamFailed:
+		return http.StatusBadGateway
+	case internalerrors.ErrInternalError, internalerrors.ErrDatabaseError, internalerrors.ErrAuditFailed:
+		return http.StatusInternalServerError
+	default:
+		return http.StatusInternalServerError
+	}
 }
