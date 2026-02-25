@@ -14,7 +14,7 @@
 | `SERVER_PORT` | `8080` | 服务监听端口 | **Pass**: `curl localhost:PORT` 有响应 |
 | `VOLC_REGION` | `cn-north-1` | 火山引擎 Region | **Pass**: 上游请求 Scope 匹配 |
 | `VOLC_TIMEOUT` | `30s` | 上游请求超时 | **Pass**: 慢请求在阈值内返回 |
-| `UPSTREAM_MAX_CONCURRENT` | `10` | 上游并发请求上限 | **Pass**: 超出并发进入队列等待 |
+| `UPSTREAM_MAX_CONCURRENT` | `1` | 上游并发请求上限 | **Pass**: 超出并发进入队列等待 |
 | `UPSTREAM_MAX_QUEUE` | `100` | 上游排队队列大小 | **Pass**: 队满立即返回 429 `RATE_LIMITED` |
 
 ## 2. 数据库初始化与迁移 (DB Migration)
@@ -73,7 +73,20 @@
 - **日志追踪**: 检查 stdout 日志。
   - **判定标准**: **Pass**: 每条日志包含 `request_id`，响应日志包含 `latency_ms` 和 `upstream_status`。
 
-## 7. 质量门禁命令 (Quality Gates)
+## 7. 并发与队列策略验证 (Concurrency & Queueing)
+
+本节验证单 Key 并发限制与全局 FIFO 队列行为。必须提供自动化回归证据。
+
+| 验证项 | 验证方法 | 判定标准 (Pass/Fail) |
+| :--- | :--- | :--- |
+| **单 Key 并发门禁** | 使用相同 API Key 同时发起 2 个请求 | **Pass**: 第二个请求立即返回 429 `RATE_LIMITED`；**Fail**: 第二个请求进入排队或成功 |
+| **全局 FIFO 验证** | 设置 `UPSTREAM_MAX_CONCURRENT=1`，使用不同 Key 发起并发请求 | **Pass**: 请求按到达顺序串行处理；**Fail**: 出现并发调用上游或顺序错乱 |
+| **队列溢出验证** | 设置 `UPSTREAM_MAX_QUEUE=1`，并发请求超出 `1(并发)+1(队列)` | **Pass**: 第 3 个请求立即返回 429 `RATE_LIMITED`；**Fail**: 请求被挂起或返回非 429 |
+| **回归证据 (Artifact)** | 检查 `server/scripts/artifacts/local_e2e_concurrency.json` | **Pass**: 文件存在且 `ok: true`；**Fail**: 文件缺失或 `ok: false` |
+
+**强制门禁**: 若并发回归证据缺失或 `ok: false`，禁止发布。证据应包含在 `.sisyphus/evidence/` 或脚本默认产物路径中。
+
+## 8. 质量门禁命令 (Quality Gates)
 
 执行以下命令进行回归验证：
 
@@ -89,13 +102,15 @@ go vet ./...
 
 # 4. 编译验证
 go build -o /dev/null ./cmd/server/main.go
+# 5. 本地 E2E 并发回归 (必须通过)
+go run scripts/local_e2e_concurrency.go
 ```
 
 **判定标准**:
 - **Pass**: 所有命令退出码为 0，测试全部通过。
 - **Fail**: 存在任一 Test Failure 或 Compilation Error。
 
-## 8. 性能基线 (Performance)
+## 9. 性能基线 (Performance)
 
 - **基线脚本**: `server/perf/baseline/main.go`
 - **执行命令**: `go run ./perf/baseline -duration 10s`
@@ -103,7 +118,7 @@ go build -o /dev/null ./cmd/server/main.go
   - **Pass**: 吞吐量 (req/s) 不低于 `server/docs/perf.md` 记录值的 80% (环境差异容忍)。
   - **Fail**: 出现非 0 的 `error_rate`。
 
-## 9. 已知限制与后续建议
+## 10. 已知限制与后续建议
 
 1. **已知限制**:
    - 仅支持即梦 4.0 异步接口 (`submit`/`get-result`)。

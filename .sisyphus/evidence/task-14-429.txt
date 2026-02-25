@@ -1,0 +1,7 @@
+Command: cd server && go test ./internal/handler/relay -run TestSubmitHandler_RateLimitedError_PropagatesTooManyRequests -count=1
+Exit Code: 0
+Status: PASS
+Timestamp: 2026-02-26
+
+Output:
+ok  	github.com/jimeng-relay/server/internal/handler/relay	0.232s

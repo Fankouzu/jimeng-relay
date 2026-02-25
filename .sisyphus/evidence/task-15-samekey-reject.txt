@@ -1,0 +1,7 @@
+Command: cd server && go test ./internal/relay/upstream -run TestClient_Submit_SameAPIKeySecondConcurrentRequestRateLimitedImmediately -count=1
+Exit Code: 0
+Status: PASS
+Timestamp: 2026-02-26
+
+Output:
+ok  	github.com/jimeng-relay/server/internal/relay/upstream	0.243s

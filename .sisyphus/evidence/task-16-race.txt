@@ -1,0 +1,21 @@
+Command: cd server && go test -race ./... -count=1
+Exit Code: 0
+Status: PASS
+Timestamp: 2026-02-26
+
+Output:
+ok  	github.com/jimeng-relay/server/cmd/server	3.912s
+ok  	github.com/jimeng-relay/server/internal/config	6.402s
+ok  	github.com/jimeng-relay/server/internal/errors	5.544s
+ok  	github.com/jimeng-relay/server/internal/handler/relay	6.001s
+ok  	github.com/jimeng-relay/server/internal/logging	4.323s
+ok  	github.com/jimeng-relay/server/internal/middleware/sigv4	1.887s
+ok  	github.com/jimeng-relay/server/internal/models	1.437s
+ok  	github.com/jimeng-relay/server/internal/relay/upstream	3.147s
+ok  	github.com/jimeng-relay/server/internal/repository	3.407s
+ok  	github.com/jimeng-relay/server/internal/repository/sqlite	2.979s
+ok  	github.com/jimeng-relay/server/internal/secretcrypto	4.731s
+ok  	github.com/jimeng-relay/server/internal/service/apikey	5.167s
+ok  	github.com/jimeng-relay/server/internal/service/audit	5.366s
+ok  	github.com/jimeng-relay/server/internal/service/idempotency	5.339s
+ok  	github.com/jimeng-relay/server/internal/service/keymanager	4.660s

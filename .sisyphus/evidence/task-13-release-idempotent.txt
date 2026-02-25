@@ -1,0 +1,7 @@
+Command: cd server && go test ./internal/service/keymanager -run TestKeyManager_Release/Idempotent -count=1
+Exit Code: 0
+Status: PASS
+Timestamp: 2026-02-26
+
+Output:
+ok  	github.com/jimeng-relay/server/internal/service/keymanager	0.208s

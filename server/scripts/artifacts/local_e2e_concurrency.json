@@ -1,0 +1,114 @@
+{
+  "ok": true,
+  "started_at": "2026-02-25T18:47:06.998581Z",
+  "duration_ms": 2731,
+  "relay_url": "http://127.0.0.1:18081",
+  "upstream_url": "http://127.0.0.1:18080",
+  "assertions": [
+    {
+      "name": "cleanup_relay_port",
+      "ok": true,
+      "details": {
+        "port": 18081
+      }
+    },
+    {
+      "name": "cleanup_upstream_port",
+      "ok": true,
+      "details": {
+        "port": 18080
+      }
+    },
+    {
+      "name": "create_api_keys",
+      "ok": true,
+      "details": {
+        "key_a_id": "key_bac1e771f80f7e17",
+        "key_b_id": "key_7abb97c02d357cb4"
+      }
+    },
+    {
+      "name": "same_key_second_submit_rejected",
+      "ok": true,
+      "details": {
+        "duration_ms": 1,
+        "error_code": "RATE_LIMITED",
+        "status": 429
+      }
+    },
+    {
+      "name": "same_key_first_submit_ok",
+      "ok": true,
+      "details": {
+        "duration_ms": 404,
+        "status": 200,
+        "task_id": "task_74cb60c3487d8072"
+      }
+    },
+    {
+      "name": "same_key_get_result_done",
+      "ok": true,
+      "details": {
+        "polls": 4,
+        "task_id": "task_74cb60c3487d8072"
+      }
+    },
+    {
+      "name": "same_key_upstream_submit_calls",
+      "ok": true,
+      "details": {
+        "submit_calls": 1
+      }
+    },
+    {
+      "name": "different_key_both_submit_ok",
+      "ok": true,
+      "details": {
+        "dur_a_ms": 403,
+        "dur_b_ms": 805,
+        "status_a": 200,
+        "status_b": 200,
+        "task_a": "task_c4c1055957219d83",
+        "task_b": "task_3bf91470c57c64eb"
+      }
+    },
+    {
+      "name": "different_key_upstream_max_inflight_is_one",
+      "ok": true,
+      "details": {
+        "max_inflight": 1
+      }
+    },
+    {
+      "name": "different_key_upstream_submit_calls",
+      "ok": true,
+      "details": {
+        "submit_calls": 2
+      }
+    },
+    {
+      "name": "different_key_upstream_submit_serialized",
+      "ok": true,
+      "details": {
+        "start_delta_ms": 401,
+        "submit_delay_ms": 400
+      }
+    },
+    {
+      "name": "different_key_get_result_done_a",
+      "ok": true,
+      "details": {
+        "polls": 1,
+        "task_id": "task_c4c1055957219d83"
+      }
+    },
+    {
+      "name": "different_key_get_result_done_b",
+      "ok": true,
+      "details": {
+        "polls": 4,
+        "task_id": "task_3bf91470c57c64eb"
+      }
+    }
+  ]
+}

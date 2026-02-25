@@ -25,8 +25,9 @@ Jimeng Relay Server 是一个高性能的即梦 4.0 API 中继服务，旨在为
 | `DATABASE_TYPE` | 否 | `sqlite` | 数据库类型 (`sqlite` 或 `postgres`) |
 | `DATABASE_URL` | 否 | `./jimeng-relay.db` | 数据库连接字符串 |
 | `VOLC_TIMEOUT` | 否 | `30s` | 上游请求超时时间 |
-| `UPSTREAM_MAX_CONCURRENT` | 否 | `10` | 上游并发请求上限 |
+| `UPSTREAM_MAX_CONCURRENT` | 否 | `1` | 上游并发请求上限 |
 | `UPSTREAM_MAX_QUEUE` | 否 | `100` | 上游排队队列大小 |
+| `UPSTREAM_SUBMIT_MIN_INTERVAL` | 否 | `0s` | 两次 submit 请求之间的最小间隔（建议按上游限流逐步调大） |
 
 > **注意**：`API_KEY_ENCRYPTION_KEY` 必须是 32 字节原始密钥的 Base64 编码字符串。可以使用以下命令生成：
 > `openssl rand -base64 32`
@@ -128,5 +129,14 @@ go build -o ./bin/jimeng-server ./cmd/server/main.go
 
 - **脱敏**：日志和审计记录中会自动脱敏敏感字段。
 - **Fail-Closed**：如果审计日志记录失败，服务将拒绝处理该请求并返回 500 错误，以确保合规性。
-- **并发控制**：通过 `UPSTREAM_MAX_CONCURRENT` 限制同时发送到上游的请求数，通过 `UPSTREAM_MAX_QUEUE` 限制排队队列大小，队满立即返回 429 错误。
+- **并发控制**：
+  - **单 Key 限制**：每个 API Key 限制并发数为 1。同 Key 的第二个并发请求将立即触发 `429 RATE_LIMITED`。
+  - **全局限制**：通过 `UPSTREAM_MAX_CONCURRENT` 限制总并发，超出部分进入 FIFO 队列。
+  - **队列限制**：通过 `UPSTREAM_MAX_QUEUE` 限制排队长度，队满立即返回 `429 RATE_LIMITED`。
+  - **范围说明**：上述限制目前为进程级行为，仅在单实例部署时提供严格保证。
+- **节流控制**：通过 `UPSTREAM_SUBMIT_MIN_INTERVAL` 控制 submit 请求的最小间隔；当上游出现并发限流（如 50430）时，建议设置为 `1s`~`3s` 并观察。
+- **错误语义**：
+  - `401 Unauthorized`：鉴权失败、Key 已过期或已吊销。
+  - `429 Too Many Requests`：触发单 Key 并发限制或全局队列已满。
+  - `502 Bad Gateway`：上游服务返回错误或请求超时。
 - **未覆盖能力**：当前版本仅支持即梦 4.0 的异步任务提交与查询，暂不支持同步接口或其他火山引擎服务。
