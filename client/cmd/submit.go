@@ -70,14 +70,20 @@ var submitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if len(binaryDataBase64) > 0 && len(submitFlags.imageURLs) > 0 {
-			return fmt.Errorf("--image-url and --image-file cannot be used together")
+
+		// Process image URLs - detect local paths and convert to base64
+		imageURLs, urlBase64, err := processImageURLs(submitFlags.imageURLs)
+		if err != nil {
+			return err
 		}
+
+		// Merge base64 data from --image-file and local paths in --image-url
+		allBase64 := append(binaryDataBase64, urlBase64...)
 
 		req := jimeng.SubmitRequest{
 			Prompt:      submitFlags.prompt,
-			ImageURLs:   submitFlags.imageURLs,
-			BinaryDataBase64: binaryDataBase64,
+			ImageURLs:   imageURLs,
+			BinaryDataBase64: allBase64,
 			Width:       width,
 			Height:      height,
 			Scale:       submitFlags.scale,
@@ -114,6 +120,10 @@ var submitCmd = &cobra.Command{
 			if shouldWait {
 				results := make([]*jimeng.FlowResult, 0, submitFlags.count)
 				for i := 0; i < submitFlags.count; i++ {
+					// Add delay between requests to avoid API concurrent limit
+					if i > 0 {
+						time.Sleep(500 * time.Millisecond)
+					}
 					opts := jimeng.FlowOptions{Wait: true, DownloadDir: downloadDir, Overwrite: submitFlags.overwrite}
 					if raw := strings.TrimSpace(submitFlags.waitTimeout); raw != "" {
 						d, err := time.ParseDuration(raw)
@@ -140,6 +150,10 @@ var submitCmd = &cobra.Command{
 
 			responses := make([]*jimeng.SubmitResponse, 0, submitFlags.count)
 			for i := 0; i < submitFlags.count; i++ {
+				// Add delay between requests to avoid API concurrent limit
+				if i > 0 {
+					time.Sleep(500 * time.Millisecond)
+				}
 				resp, err := client.SubmitTask(ctx, req)
 				if err != nil {
 					return fmt.Errorf("generation %d/%d failed: %w", i+1, submitFlags.count, err)
@@ -224,6 +238,65 @@ func loadImageFilesAsBase64(paths []string) ([]string, error) {
 		return nil, fmt.Errorf("--image-file provided but no valid file path found")
 	}
 	return out, nil
+}
+
+// processImageURLs processes image URLs, detecting local paths and converting them to base64
+func processImageURLs(urls []string) ([]string, []string, error) {
+	if len(urls) == 0 {
+		return nil, nil, nil
+	}
+
+	var remoteURLs []string
+	var base64Data []string
+
+	for _, u := range urls {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+
+		// Check if it's a local path (starts with ./, /, or file exists)
+		if strings.HasPrefix(u, "./") || strings.HasPrefix(u, "/") || strings.HasPrefix(u, "../") {
+			// It's a local path, read and convert to base64
+			info, err := os.Stat(u)
+			if err != nil {
+				return nil, nil, fmt.Errorf("stat --image-url %q failed: %w", u, err)
+			}
+			if info.Size() <= 0 {
+				return nil, nil, fmt.Errorf("--image-url %q is empty", u)
+			}
+			if info.Size() > maxInputImageFileBytes {
+				return nil, nil, fmt.Errorf("--image-url %q exceeds max size %d bytes", u, maxInputImageFileBytes)
+			}
+			data, err := os.ReadFile(u)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read --image-url %q failed: %w", u, err)
+			}
+			base64Data = append(base64Data, base64.StdEncoding.EncodeToString(data))
+		} else if _, err := os.Stat(u); err == nil {
+			// File exists, treat as local path
+			info, err := os.Stat(u)
+			if err != nil {
+				return nil, nil, fmt.Errorf("stat --image-url %q failed: %w", u, err)
+			}
+			if info.Size() <= 0 {
+				return nil, nil, fmt.Errorf("--image-url %q is empty", u)
+			}
+			if info.Size() > maxInputImageFileBytes {
+				return nil, nil, fmt.Errorf("--image-url %q exceeds max size %d bytes", u, maxInputImageFileBytes)
+			}
+			data, err := os.ReadFile(u)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read --image-url %q failed: %w", u, err)
+			}
+			base64Data = append(base64Data, base64.StdEncoding.EncodeToString(data))
+		} else {
+			// It's a remote URL
+			remoteURLs = append(remoteURLs, u)
+		}
+	}
+
+	return remoteURLs, base64Data, nil
 }
 
 func normalizeQualityMode(raw string) (string, error) {

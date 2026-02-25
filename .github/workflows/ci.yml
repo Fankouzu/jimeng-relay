@@ -29,7 +29,7 @@ jobs:
           working-directory: client
 
       - name: Run Tests
-        run: cd client && make test
+        run: cd client && go test ./... -count=1
 
       - name: Run Race Tests
-        run: cd client && make test-race
+        run: cd client && go test -race ./... -count=1

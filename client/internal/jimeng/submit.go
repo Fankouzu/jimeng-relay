@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jimeng-relay/client/internal/api"
 	internalerrors "github.com/jimeng-relay/client/internal/errors"
@@ -95,10 +96,36 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 
 	c.debug("submit request", "body", reqBody)
 
-	respBody, _, err := c.visual.CVSync2AsyncSubmitTask(reqBody)
-	c.debug("API call completed", "error", err)
+	var respBody map[string]interface{}
+	retryCfg := DefaultRetryConfig
+	retryCfg.MaxRetries = 6
+	retryCfg.InitialDelay = time.Second
+	retryCfg.MaxDelay = 20 * time.Second
+
+	err := DoWithRetry(ctx, retryCfg, func() error {
+		body, _, callErr := c.visual.CVSync2AsyncSubmitTask(reqBody)
+		c.debug("API call completed", "error", callErr)
+		if callErr != nil {
+			return internalerrors.New(internalerrors.ErrUnknown, "submit task request failed", callErr)
+		}
+
+		code := submitToInt(body["code"])
+		status := submitToInt(body["status"])
+		if code == 50429 || code == 50430 || status == 50429 || status == 50430 {
+			message := submitToString(body["message"])
+			requestID := submitToString(body["request_id"])
+			return internalerrors.New(
+				internalerrors.ErrRateLimited,
+				fmt.Sprintf("submit task rate limited: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
+				nil,
+			)
+		}
+
+		respBody = body
+		return nil
+	})
 	if err != nil {
-		return nil, internalerrors.New(internalerrors.ErrUnknown, "submit task request failed", err)
+		return nil, err
 	}
 
 	if err := ctx.Err(); err != nil {

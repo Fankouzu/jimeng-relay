@@ -38,15 +38,20 @@ cp ./bin/jimeng /usr/local/bin/jimeng
 | `VOLC_SECRETKEY` | 火山引擎 SK（必填） | - |
 | `VOLC_REGION` | 区域 | `cn-north-1` |
 | `VOLC_HOST` | API Host | `visual.volcengineapi.com` |
-| `VOLC_HOST` | API Host | `visual.volcengineapi.com` |
 | `VOLC_SCHEME` | 协议 (http/https) | `https` |
 | `VOLC_TIMEOUT` | 请求超时 | `30s` |
+
 ### 本地测试 Relay Server
 
-如需连接本地 Relay Server 进行测试，请在 `.env` 中配置：```
+如需连接本地 Relay Server 进行测试，请在 `.env` 中配置：
+
+```bash
 VOLC_SCHEME=http
 VOLC_HOST=localhost:8080
+VOLC_TIMEOUT=180s
 ```
+
+说明：当服务端开启排队/节流时，客户端请求可能会在队列中等待，`VOLC_TIMEOUT` 建议大于服务端最大排队等待时间。
 
 ### `.env` 使用
 
