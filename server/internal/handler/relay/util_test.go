@@ -2,7 +2,10 @@ package relay
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	internalerrors "github.com/jimeng-relay/server/internal/errors"
@@ -79,4 +82,55 @@ func TestErrorToStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadRequestBodyLimited_AllowsBodyUpToLimit(t *testing.T) {
+	body := strings.Repeat("a", int(maxDownstreamBodyBytes))
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", strings.NewReader(body))
+
+	got, err := readRequestBodyLimited(req)
+	if err != nil {
+		t.Fatalf("readRequestBodyLimited() error = %v", err)
+	}
+	if len(got) != len(body) {
+		t.Fatalf("readRequestBodyLimited() len = %d, want %d", len(got), len(body))
+	}
+}
+
+func TestReadRequestBodyLimited_RejectsBodyAboveLimit(t *testing.T) {
+	body := strings.Repeat("a", int(maxDownstreamBodyBytes)+1)
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", strings.NewReader(body))
+
+	_, err := readRequestBodyLimited(req)
+	if err == nil {
+		t.Fatalf("readRequestBodyLimited() expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "request body too large") {
+		t.Fatalf("readRequestBodyLimited() error = %q, want contains %q", err.Error(), "request body too large")
+	}
+}
+
+func TestReadRequestBodyLimited_NilRequest(t *testing.T) {
+	got, err := readRequestBodyLimited(nil)
+	if err != nil {
+		t.Fatalf("readRequestBodyLimited(nil) error = %v", err)
+	}
+	if got != nil {
+		t.Fatalf("readRequestBodyLimited(nil) = %v, want nil", got)
+	}
+}
+
+func TestReadRequestBodyLimited_ReaderError(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", io.NopCloser(errReader{}))
+
+	_, err := readRequestBodyLimited(req)
+	if err == nil {
+		t.Fatalf("readRequestBodyLimited() expected error, got nil")
+	}
+}
+
+type errReader struct{}
+
+func (errReader) Read(_ []byte) (int, error) {
+	return 0, errors.New("read failed")
 }

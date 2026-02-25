@@ -19,7 +19,7 @@ import (
 	"github.com/jimeng-relay/server/internal/relay/upstream"
 )
 
-const maxDownstreamBodyBytes int64 = 2 << 20
+const maxDownstreamBodyBytes int64 = 10 << 20
 
 func logResponse(ctx context.Context, logger *slog.Logger, start time.Time, upstreamStatus int, err error) {
 	latency := time.Since(start).Milliseconds()
