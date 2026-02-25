@@ -14,7 +14,7 @@ client/outputs
 
 
 # Database
-server/jimeng-relay.db
+*.db
 
 # OS
 .DS_Store
