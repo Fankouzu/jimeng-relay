@@ -35,6 +35,9 @@ const (
 
 	defaultMaxConcurrent = 10
 	defaultMaxQueue      = 100
+
+	maxUpstreamResponseBodyBytes = 8 << 20
+	maxRetryAfterDelay           = 60 * time.Second
 )
 
 type Options struct {
@@ -284,10 +287,7 @@ func (c *Client) acquire(ctx context.Context) error {
 
 	w := &queueWaiter{ready: make(chan struct{})}
 	c.waiters = append(c.waiters, w)
-	queuePos := len(c.waiters)
 	c.mu.Unlock()
-
-	_ = queuePos
 
 	select {
 	case <-w.ready:
@@ -434,7 +434,7 @@ func (c *Client) doOnce(ctx context.Context, action string, body []byte, headers
 	}
 	defer resp.Body.Close()
 
-	respBody, readErr := io.ReadAll(resp.Body)
+	respBody, readErr := readResponseBodyLimited(resp.Body, maxUpstreamResponseBodyBytes)
 	if readErr != nil {
 		return nil, internalerrors.New(internalerrors.ErrUpstreamFailed, "read upstream response", readErr)
 	}
@@ -476,6 +476,9 @@ func retryDelay(retryAfter string, now time.Time) time.Duration {
 		if seconds < 0 {
 			return 0
 		}
+		if seconds > maxRetryAfterDelay {
+			return maxRetryAfterDelay
+		}
 		return seconds
 	}
 
@@ -483,6 +486,9 @@ func retryDelay(retryAfter string, now time.Time) time.Duration {
 		d := at.Sub(now.UTC())
 		if d < 0 {
 			return 0
+		}
+		if d > maxRetryAfterDelay {
+			return maxRetryAfterDelay
 		}
 		return d
 	}
@@ -667,4 +673,23 @@ func hmacSHA256(key []byte, message string) []byte {
 func sha256Hex(v []byte) string {
 	s := sha256.Sum256(v)
 	return hex.EncodeToString(s[:])
+}
+
+func readResponseBodyLimited(r io.Reader, limit int64) ([]byte, error) {
+	if r == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		return io.ReadAll(r)
+	}
+
+	lr := io.LimitReader(r, limit+1)
+	body, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("upstream response too large")
+	}
+	return body, nil
 }

@@ -31,6 +31,14 @@ import (
 	"github.com/jimeng-relay/server/internal/service/keymanager"
 )
 
+const (
+	defaultReadHeaderTimeout = 5 * time.Second
+	defaultReadTimeout       = 30 * time.Second
+	defaultWriteTimeout      = 60 * time.Second
+	defaultIdleTimeout       = 120 * time.Second
+	defaultMaxHeaderBytes    = 1 << 20
+)
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		log.Fatalf("server command failed: %v", err)
@@ -107,7 +115,7 @@ func runServer() error {
 
 	obs := observability.Middleware(logger)
 	mux := http.NewServeMux()
-	mux.Handle("/", obs(authn(app)))
+	mux.Handle("/", observability.RecoverMiddleware(logger)(obs(authn(app))))
 
 	log.Printf("Starting jimeng-relay server on port %s...", cfg.ServerPort)
 	log.Printf("Upstream concurrent limit: %d, queue size: %d", cfg.UpstreamMaxConcurrent, cfg.UpstreamMaxQueue)
@@ -115,7 +123,17 @@ func runServer() error {
 	log.Printf("API key lifecycle is managed via CLI: ./jimeng-server key ...")
 	log.Printf("Registered relay submit routes: POST /v1/submit, POST /?Action=CVSync2AsyncSubmitTask")
 	log.Printf("Registered relay get-result routes: POST /v1/get-result, POST /?Action=CVSync2AsyncGetResult")
-	if err := http.ListenAndServe(":"+cfg.ServerPort, mux); err != nil {
+	srv := &http.Server{
+		Addr:              ":" + cfg.ServerPort,
+		Handler:           mux,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		ReadTimeout:       defaultReadTimeout,
+		WriteTimeout:      defaultWriteTimeout,
+		IdleTimeout:       defaultIdleTimeout,
+		MaxHeaderBytes:    defaultMaxHeaderBytes,
+	}
+
+	if err := srv.ListenAndServe(); err != nil {
 		return fmt.Errorf("listen on :%s: %w", cfg.ServerPort, err)
 	}
 	return nil
