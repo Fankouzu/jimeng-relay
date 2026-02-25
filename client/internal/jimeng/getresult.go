@@ -3,6 +3,7 @@ package jimeng
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jimeng-relay/client/internal/api"
 	internalerrors "github.com/jimeng-relay/client/internal/errors"
@@ -15,12 +16,12 @@ type GetResultRequest struct {
 type TaskStatus string
 
 const (
-	StatusInQueue   TaskStatus = TaskStatus(api.StatusInQueue)
+	StatusInQueue    TaskStatus = TaskStatus(api.StatusInQueue)
 	StatusGenerating TaskStatus = TaskStatus(api.StatusGenerating)
-	StatusDone      TaskStatus = TaskStatus(api.StatusDone)
-	StatusNotFound  TaskStatus = TaskStatus(api.StatusNotFound)
-	StatusExpired   TaskStatus = TaskStatus(api.StatusExpired)
-	StatusFailed    TaskStatus = TaskStatus(api.StatusFailed)
+	StatusDone       TaskStatus = TaskStatus(api.StatusDone)
+	StatusNotFound   TaskStatus = TaskStatus(api.StatusNotFound)
+	StatusExpired    TaskStatus = TaskStatus(api.StatusExpired)
+	StatusFailed     TaskStatus = TaskStatus(api.StatusFailed)
 )
 
 type GetResultResponse struct {
@@ -53,10 +54,28 @@ func (c *Client) GetResult(ctx context.Context, req GetResultRequest) (*GetResul
 			return reqErr
 		}
 
+		if errObj, ok := respBody["error"].(map[string]interface{}); ok {
+			errCode := strings.TrimSpace(toString(errObj["code"]))
+			errMsg := strings.TrimSpace(toString(errObj["message"]))
+			return internalerrors.New(
+				relayErrorToClientCode(errCode),
+				fmt.Sprintf("relay error: code=%s message=%s", errCode, errMsg),
+				nil,
+			)
+		}
+
 		code := toInt(respBody["code"])
 		status := toInt(respBody["status"])
 		message := toString(respBody["message"])
 		requestID := toString(respBody["request_id"])
+
+		if code == 0 && status == 0 && message == "" && requestID == "" {
+			return internalerrors.New(
+				internalerrors.ErrDecodeFailed,
+				"query task response missing code/status/message/request_id",
+				nil,
+			)
+		}
 
 		if code == 50429 || code == 50430 || status == 50429 || status == 50430 {
 			return internalerrors.New(
@@ -119,6 +138,19 @@ func (r *GetResultResponse) IsTerminal() bool {
 func toString(v interface{}) string {
 	s, _ := v.(string)
 	return s
+}
+
+func relayErrorToClientCode(code string) internalerrors.Code {
+	switch strings.TrimSpace(code) {
+	case "AUTH_FAILED", "KEY_REVOKED", "KEY_EXPIRED", "INVALID_SIGNATURE":
+		return internalerrors.ErrAuthFailed
+	case "RATE_LIMITED":
+		return internalerrors.ErrRateLimited
+	case "VALIDATION_FAILED":
+		return internalerrors.ErrValidationFailed
+	default:
+		return internalerrors.ErrUnknown
+	}
 }
 
 func toInt(v interface{}) int {
