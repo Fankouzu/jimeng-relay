@@ -714,8 +714,8 @@ func TestSubmitHandler_WrappedRateLimited_ReturnsBadGateway(t *testing.T) {
 }
 
 func TestSubmitHandler_BodyLarge_ShouldBeAccepted(t *testing.T) {
-	// This test is intended to FAIL (RED) to expose that 10MiB is too small for some payloads.
-	// We want to support at least 20MiB for dual-image payloads.
+	// Ensure we accept realistic larger payloads (e.g. dual-image inline video requests)
+	// while still enforcing an upper bound via maxDownstreamBodyBytes.
 	upstreamBody := []byte(`{"code":10000,"message":"ok"}`)
 	fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
 	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
@@ -739,8 +739,8 @@ func TestSubmitHandler_BodyTooLarge(t *testing.T) {
 	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
 	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
 
-	// maxDownstreamBodyBytes is 10MiB. 10MiB + 1 byte should fail.
-	largeBody := make([]byte, (10<<20)+1)
+	// maxDownstreamBodyBytes + 1 byte should fail.
+	largeBody := make([]byte, int(maxDownstreamBodyBytes)+1)
 	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(largeBody))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
@@ -759,8 +759,8 @@ func TestSubmitHandler_BodyNearLimit(t *testing.T) {
 	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
 	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
 
-	// 10MiB should be accepted.
-	nearLimitBody := make([]byte, 10<<20)
+	// maxDownstreamBodyBytes should be accepted.
+	nearLimitBody := make([]byte, int(maxDownstreamBodyBytes))
 	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(nearLimitBody))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))

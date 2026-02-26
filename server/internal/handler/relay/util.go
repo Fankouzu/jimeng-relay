@@ -19,7 +19,13 @@ import (
 	"github.com/jimeng-relay/server/internal/relay/upstream"
 )
 
-const maxDownstreamBodyBytes int64 = 10 << 20
+// maxDownstreamBodyBytes is the maximum request body size we accept from clients
+// before relaying to upstream.
+//
+// Rationale: video i2v "first-tail" style requests may embed two local images.
+// The client caps each inline image at ~5MiB, but JSON/form overhead makes the
+// total payload slightly larger than 10MiB. Keep a clear safety margin.
+const maxDownstreamBodyBytes int64 = 20 << 20
 
 func logResponse(ctx context.Context, logger *slog.Logger, start time.Time, upstreamStatus int, err error) {
 	latency := time.Since(start).Milliseconds()
@@ -103,12 +109,22 @@ func writeRelayPassthrough(w http.ResponseWriter, resp *upstream.Response) {
 	if resp == nil {
 		return
 	}
-	if contentType := strings.TrimSpace(resp.Header.Get("Content-Type")); contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
+	copyResponseHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	if _, err := w.Write(resp.Body); err != nil {
 		return
+	}
+}
+
+func copyResponseHeaders(dst, src http.Header) {
+	if dst == nil || src == nil {
+		return
+	}
+	for k, vals := range src {
+		if len(vals) == 0 {
+			continue
+		}
+		dst[k] = append([]string(nil), vals...)
 	}
 }
 
