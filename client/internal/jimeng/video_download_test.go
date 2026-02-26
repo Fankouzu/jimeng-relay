@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,7 +15,8 @@ func TestVideoDownload_Success(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("fake video content"))
+		_, err := w.Write([]byte("fake video content"))
+		require.NoError(t, err)
 	}))
 	defer server.Close()
 
@@ -59,7 +59,8 @@ func TestVideoDownload_Overwrite(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("new content"))
+		_, err := w.Write([]byte("new content"))
+		require.NoError(t, err)
 	}))
 	defer server.Close()
 

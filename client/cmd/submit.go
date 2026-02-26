@@ -81,15 +81,15 @@ var submitCmd = &cobra.Command{
 		allBase64 := append(binaryDataBase64, urlBase64...)
 
 		req := jimeng.SubmitRequest{
-			Prompt:      submitFlags.prompt,
-			ImageURLs:   imageURLs,
+			Prompt:           submitFlags.prompt,
+			ImageURLs:        imageURLs,
 			BinaryDataBase64: allBase64,
-			Width:       width,
-			Height:      height,
-			Scale:       submitFlags.scale,
-			ForceSingle: submitFlags.forceSingle,
-			MinRatio:    submitFlags.minRatio,
-			MaxRatio:    submitFlags.maxRatio,
+			Width:            width,
+			Height:           height,
+			Scale:            submitFlags.scale,
+			ForceSingle:      submitFlags.forceSingle,
+			MinRatio:         submitFlags.minRatio,
+			MaxRatio:         submitFlags.maxRatio,
 		}
 
 		if (width > 0) != (height > 0) {
@@ -440,5 +440,7 @@ func init() {
 	submitCmd.Flags().StringVar(&submitFlags.downloadDir, "download-dir", "", "If set, download result images into this directory (implies --wait)")
 	submitCmd.Flags().BoolVar(&submitFlags.overwrite, "overwrite", false, "Overwrite existing files when downloading")
 
-	_ = submitCmd.MarkFlagRequired("prompt")
+	if err := submitCmd.MarkFlagRequired("prompt"); err != nil {
+		panic(err)
+	}
 }

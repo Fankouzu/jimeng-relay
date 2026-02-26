@@ -195,7 +195,9 @@ func decodeBase64ImagesToDir(ctx context.Context, base64Images []string, dir str
 			return nil, fmt.Errorf("open output file failed: %w", err)
 		}
 		if _, err := out.Write(data); err != nil {
-			_ = out.Close()
+			if closeErr := out.Close(); closeErr != nil {
+				return nil, fmt.Errorf("write image content failed: %w (close output file failed: %v)", err, closeErr)
+			}
 			return nil, fmt.Errorf("write image content failed: %w", err)
 		}
 		if err := out.Close(); err != nil {
@@ -283,6 +285,10 @@ func init() {
 	downloadCmd.Flags().StringVar(&downloadFlags.taskID, "task-id", "", "Task ID")
 	downloadCmd.Flags().StringVar(&downloadFlags.dir, "dir", "", "Download directory")
 	downloadCmd.Flags().BoolVar(&downloadFlags.overwrite, "overwrite", false, "Overwrite existing files")
-	_ = downloadCmd.MarkFlagRequired("task-id")
-	_ = downloadCmd.MarkFlagRequired("dir")
+	if err := downloadCmd.MarkFlagRequired("task-id"); err != nil {
+		panic(err)
+	}
+	if err := downloadCmd.MarkFlagRequired("dir"); err != nil {
+		panic(err)
+	}
 }

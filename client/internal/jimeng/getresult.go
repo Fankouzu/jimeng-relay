@@ -136,7 +136,10 @@ func (r *GetResultResponse) IsTerminal() bool {
 }
 
 func toString(v interface{}) string {
-	s, _ := v.(string)
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
 	return s
 }
 

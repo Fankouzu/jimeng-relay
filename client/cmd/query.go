@@ -45,5 +45,7 @@ func init() {
 	rootCmd.AddCommand(queryCmd)
 
 	queryCmd.Flags().StringVar(&queryFlags.taskID, "task-id", "", "Task ID")
-	_ = queryCmd.MarkFlagRequired("task-id")
+	if err := queryCmd.MarkFlagRequired("task-id"); err != nil {
+		panic(err)
+	}
 }

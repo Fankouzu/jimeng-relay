@@ -199,12 +199,15 @@ func TestVideoSubmitQuery_UsesPresetReqKeyAndParsesVideoResult(t *testing.T) {
 
 		switch action {
 		case api.ActionSubmitTask:
-			_, _ = w.Write([]byte(`{"code":10000,"status":10000,"message":"success","request_id":"rid-submit","time_elapsed":12,"data":{"task_id":"task-video-1"}}`))
+			_, err = w.Write([]byte(`{"code":10000,"status":10000,"message":"success","request_id":"rid-submit","time_elapsed":12,"data":{"task_id":"task-video-1"}}`))
+			require.NoError(t, err)
 		case api.ActionGetResult:
-			_, _ = w.Write([]byte(`{"code":10000,"status":10000,"message":"success","request_id":"rid-query","data":{"status":"done","video_url":"https://example.com/video.mp4"}}`))
+			_, err = w.Write([]byte(`{"code":10000,"status":10000,"message":"success","request_id":"rid-query","data":{"status":"done","video_url":"https://example.com/video.mp4"}}`))
+			require.NoError(t, err)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"code":400,"status":400,"message":"unknown action"}`))
+			_, err = w.Write([]byte(`{"code":400,"status":400,"message":"unknown action"}`))
+			require.NoError(t, err)
 		}
 	}))
 	defer server.Close()
