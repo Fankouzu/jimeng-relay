@@ -70,5 +70,7 @@ func init() {
 	waitCmd.Flags().StringVar(&waitFlags.taskID, "task-id", "", "Task ID")
 	waitCmd.Flags().StringVar(&waitFlags.interval, "interval", "", "Poll interval duration, e.g. 2s")
 	waitCmd.Flags().StringVar(&waitFlags.waitTimeout, "wait-timeout", "", "Max wait duration, e.g. 60s, 5m")
-	_ = waitCmd.MarkFlagRequired("task-id")
+	if err := waitCmd.MarkFlagRequired("task-id"); err != nil {
+		panic(err)
+	}
 }

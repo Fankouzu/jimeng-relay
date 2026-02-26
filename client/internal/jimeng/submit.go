@@ -12,16 +12,16 @@ import (
 )
 
 type SubmitRequest struct {
-	Prompt      string   `json:"prompt"`
-	ImageURLs   []string `json:"image_urls"`
+	Prompt           string   `json:"prompt"`
+	ImageURLs        []string `json:"image_urls"`
 	BinaryDataBase64 []string `json:"binary_data_base64"`
-	Size        string   `json:"size"`
-	Width       int      `json:"width"`
-	Height      int      `json:"height"`
-	Scale       int      `json:"scale"`
-	ForceSingle bool     `json:"force_single"`
-	MinRatio    string   `json:"min_ratio"`
-	MaxRatio    string   `json:"max_ratio"`
+	Size             string   `json:"size"`
+	Width            int      `json:"width"`
+	Height           int      `json:"height"`
+	Scale            int      `json:"scale"`
+	ForceSingle      bool     `json:"force_single"`
+	MinRatio         string   `json:"min_ratio"`
+	MaxRatio         string   `json:"max_ratio"`
 }
 
 type SubmitResponse struct {
