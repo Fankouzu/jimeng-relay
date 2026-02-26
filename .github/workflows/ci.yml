@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
-    name: Test
+  client:
+    name: Client
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -17,7 +17,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24' # Using a stable version for CI
+          go-version: '1.24'
+          cache-dependency-path: client/go.sum
 
       - name: Run Vet
         run: cd client && make vet
@@ -33,3 +34,34 @@ jobs:
 
       - name: Run Race Tests
         run: cd client && go test -race ./... -count=1
+
+  server:
+    name: Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: server/go.sum
+
+      - name: Run Vet
+        run: cd server && make vet
+
+      - name: Run Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: server
+
+      - name: Run Tests
+        run: cd server && go test ./... -count=1
+
+      - name: Run Race Tests
+        run: cd server && go test -race ./... -count=1
+
+      - name: Run Concurrency Regression Gate
+        run: cd server && go run scripts/local_e2e_concurrency.go
