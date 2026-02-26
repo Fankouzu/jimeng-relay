@@ -445,3 +445,165 @@ func TestVideoI2VLocalPayloadTooLarge(t *testing.T) {
 	require.ErrorContains(t, err, "local i2v image payload is too large")
 	require.ErrorContains(t, err, "upload the image to a URL")
 }
+func TestVideoErrorDiagnostics_50400(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Simulate 50400 business failure
+		_, _ = w.Write([]byte(`{"code":50400,"status":50400,"message":"access denied","request_id":"rid-50400"}`))
+	}))
+	defer server.Close()
+
+	parsedURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	c, err := NewClient(config.Config{
+		Credentials: config.Credentials{AccessKey: "ak", SecretKey: "sk"},
+		Region:      "cn-north-1",
+		Host:        parsedURL.Host,
+		Scheme:      parsedURL.Scheme,
+	})
+	require.NoError(t, err)
+
+	t.Run("submit path enrichment", func(t *testing.T) {
+		_, err := c.SubmitVideoTask(context.Background(), VideoSubmitRequest{
+			Preset:      api.VideoPresetT2V720,
+			Prompt:      "test prompt",
+			Frames:      121,
+			AspectRatio: "16:9",
+		})
+		require.Error(t, err)
+		// These assertions are expected to FAIL in the RED phase
+		require.ErrorContains(t, err, "preset=t2v-720")
+		require.ErrorContains(t, err, "req_key=jimeng_t2v_v30_720p")
+		require.ErrorContains(t, err, "request_id=rid-50400")
+		require.ErrorContains(t, err, "host="+parsedURL.Host)
+		require.ErrorContains(t, err, "region=cn-north-1")
+		require.ErrorContains(t, err, "service=cv")
+		require.ErrorContains(t, err, "action=CVSync2AsyncSubmitTask")
+		require.ErrorContains(t, err, "version=2022-08-31")
+	})
+
+	t.Run("query path enrichment", func(t *testing.T) {
+		_, err := c.GetVideoResult(context.Background(), VideoGetResultRequest{
+			TaskID: "task-123",
+			Preset: api.VideoPresetT2V720,
+			ReqKey: api.ReqKeyJimengT2VV30_720p,
+		})
+		require.Error(t, err)
+		// These assertions are expected to FAIL in the RED phase
+		require.ErrorContains(t, err, "preset=t2v-720")
+		require.ErrorContains(t, err, "req_key=jimeng_t2v_v30_720p")
+		require.ErrorContains(t, err, "request_id=rid-50400")
+		require.ErrorContains(t, err, "host="+parsedURL.Host)
+		require.ErrorContains(t, err, "region=cn-north-1")
+		require.ErrorContains(t, err, "service=cv")
+		require.ErrorContains(t, err, "action=CVSync2AsyncGetResult")
+		require.ErrorContains(t, err, "version=2022-08-31")
+	})
+
+	t.Run("non-50400 errors are not enriched", func(t *testing.T) {
+		server400 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":40000,"status":40000,"message":"bad request","request_id":"rid-40000"}`))
+		}))
+		defer server400.Close()
+		parsedURL400, _ := url.Parse(server400.URL)
+		c400, _ := NewClient(config.Config{
+			Credentials: config.Credentials{AccessKey: "ak", SecretKey: "sk"},
+			Region:      "cn-north-1",
+			Host:        parsedURL400.Host,
+			Scheme:      parsedURL400.Scheme,
+		})
+
+		_, err := c400.SubmitVideoTask(context.Background(), VideoSubmitRequest{
+			Preset:      api.VideoPresetT2V720,
+			Prompt:      "test prompt",
+			Frames:      121,
+			AspectRatio: "16:9",
+		})
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "preset=")
+		require.NotContains(t, err.Error(), "req_key=")
+		require.NotContains(t, err.Error(), "host=")
+	})
+}
+
+func TestVideoValidation_I2VFirstTailAggregateSizeTooLarge(t *testing.T) {
+	t.Parallel()
+
+	// Each image is 4MiB, total 8MiB. 8MiB is less than 10MiB relay limit,
+	// but we might want a stricter aggregate limit in the client to be safe.
+	// For now, let's assume we want to enforce an aggregate limit of 8MiB or similar.
+	// Actually, the task says "Cover first-tail aggregate-size edge case relevant to relay limits".
+	// If relay limit is 10MiB, and we have two 5MiB images, that's 10MiB + overhead.
+	// Let's test with two images that total > 10MiB but individually are <= 5MiB.
+	size := 5 * 1024 * 1024 // 5MiB
+	img1 := "data:image/png;base64," + base64.StdEncoding.EncodeToString(make([]byte, size))
+	img2 := "data:image/png;base64," + base64.StdEncoding.EncodeToString(make([]byte, size))
+
+	req := &VideoSubmitRequest{
+		Variant:   VideoVariantI2VFirstTail,
+		Prompt:    "animate two images",
+		ImageURLs: []string{img1, img2},
+	}
+
+	err := ValidateVideoSubmitRequest(req)
+	// This should fail because the aggregate size is too large for the relay.
+	require.Error(t, err)
+	require.ErrorContains(t, err, "aggregate local payload size is too large")
+}
+
+func TestVideoValidation_MalformedDataURL(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		url  string
+		msg  string
+	}{
+		{
+			name: "missing comma",
+			url:  "data:image/png;base64;SGVsbG8=",
+			msg:  "missing data URL separator",
+		},
+		{
+			name: "empty base64",
+			url:  "data:image/png;base64,",
+			msg:  "base64 content is empty",
+		},
+		{
+			name: "invalid base64 characters",
+			url:  "data:image/png;base64,!!!",
+			msg:  "invalid base64 content",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := &VideoSubmitRequest{
+				Variant:   VideoVariantI2VFirstFrame,
+				Prompt:    "test malformed data url",
+				ImageURLs: []string{tc.url},
+			}
+			err := ValidateVideoSubmitRequest(req)
+			require.Error(t, err)
+			require.ErrorContains(t, err, tc.msg)
+		})
+	}
+}
+
+func TestVideoValidation_ValidDataURL(t *testing.T) {
+	t.Parallel()
+
+	req := &VideoSubmitRequest{
+		Variant:   VideoVariantI2VFirstFrame,
+		Prompt:    "test valid data url",
+		ImageURLs: []string{"data:image/png;base64,SGVsbG8="}, // "Hello" in base64
+	}
+	err := ValidateVideoSubmitRequest(req)
+	require.NoError(t, err)
+}

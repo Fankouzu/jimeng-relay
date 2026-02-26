@@ -50,6 +50,7 @@ func TestVideoSubmitFlags(t *testing.T) {
 		"--frames",
 		"--aspect-ratio",
 		"--image-url",
+		"--image-file",
 		"--template",
 		"--camera-strength",
 	}
@@ -469,4 +470,63 @@ func TestVideoSubmit_FormatResponseIncludesPresetAndReqKey(t *testing.T) {
 	if !strings.Contains(res, "ReqKey=jimeng_t2v_v30_720p") {
 		t.Fatalf("expected req_key in text output, got=%q", res)
 	}
+}
+
+func TestVideoSubmit_ImageFileContract(t *testing.T) {
+	// This test covers the CLI contract for --image-file which is not yet implemented.
+	// These tests are expected to FAIL (RED phase).
+
+	t.Run("accepts single --image-file for i2v-first", func(t *testing.T) {
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first", "--prompt", "test", "--image-file", "nonexistent.png"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("expected success, got error: %v", err)
+		}
+	})
+
+	t.Run("accepts two --image-file for i2v-first-tail", func(t *testing.T) {
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first-tail", "--prompt", "test", "--image-file", "f1.png", "--image-file", "f2.png"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("expected success, got error: %v", err)
+		}
+	})
+
+	t.Run("rejects wrong count for i2v-first-tail", func(t *testing.T) {
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first-tail", "--prompt", "test", "--image-file", "f1.png"})
+		err := rootCmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for wrong image count, got nil")
+		}
+		if !strings.Contains(err.Error(), "requires exactly 2") {
+			t.Fatalf("expected count mismatch error, got: %v", err)
+		}
+	})
+
+	t.Run("rejects --image-file for t2v presets", func(t *testing.T) {
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "t2v-720", "--prompt", "test", "--image-file", "f1.png"})
+		err := rootCmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for --image-file with t2v preset, got nil")
+		}
+		if !strings.Contains(err.Error(), "not allowed for") {
+			t.Fatalf("expected not-allowed error, got: %v", err)
+		}
+	})
+
+	t.Run("mutual exclusivity with --image-url", func(t *testing.T) {
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first", "--prompt", "test", "--image-file", "f1.png", "--image-url", "http://example.com/i.png"})
+		err := rootCmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for both --image-file and --image-url, got nil")
+		}
+		if !strings.Contains(err.Error(), "cannot be used together") {
+			t.Fatalf("expected mutual exclusivity error, got: %v", err)
+		}
+	})
 }

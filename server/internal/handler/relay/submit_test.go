@@ -712,3 +712,104 @@ func TestSubmitHandler_WrappedRateLimited_ReturnsBadGateway(t *testing.T) {
 		t.Fatalf("expected status 502 for wrapped error, got %d", rec.Code)
 	}
 }
+
+func TestSubmitHandler_BodyLarge_ShouldBeAccepted(t *testing.T) {
+	// This test is intended to FAIL (RED) to expose that 10MiB is too small for some payloads.
+	// We want to support at least 20MiB for dual-image payloads.
+	upstreamBody := []byte(`{"code":10000,"message":"ok"}`)
+	fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	largeBody := make([]byte, 15<<20) // 15MiB
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(largeBody))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for 15MiB payload, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSubmitHandler_BodyTooLarge(t *testing.T) {
+	fake := &fakeSubmitClient{}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	// maxDownstreamBodyBytes is 10MiB. 10MiB + 1 byte should fail.
+	largeBody := make([]byte, (10<<20)+1)
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(largeBody))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status 413, got %d", rec.Code)
+	}
+}
+
+func TestSubmitHandler_BodyNearLimit(t *testing.T) {
+	upstreamBody := []byte(`{"code":10000,"message":"ok"}`)
+	fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	// 10MiB should be accepted.
+	nearLimitBody := make([]byte, 10<<20)
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(nearLimitBody))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", fake.calls)
+	}
+}
+
+func TestSubmitHandler_UpstreamErrorPassthrough(t *testing.T) {
+	upstreamBody := []byte(`{"code":50000,"message":"internal server error"}`)
+	fake := &fakeSubmitClient{
+		resp: &upstream.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"upstream-req-id"},
+			},
+			Body: upstreamBody,
+		},
+		err: internalerrors.New(internalerrors.ErrUpstreamFailed, "upstream error", nil),
+	}
+	auditSvc, _, _, _ := newTestAuditService(t, nil, nil, nil)
+	h := NewSubmitHandler(fake, auditSvc, nil, nil, nil).Routes()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader([]byte(`{"prompt":"cat"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k1"))
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", rec.Code)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), upstreamBody) {
+		t.Fatalf("expected body passthrough, got %q", rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected content-type passthrough, got %q", got)
+	}
+	// This is expected to FAIL currently as Request-Id is not passed through in util.go
+	if got := rec.Header().Get("X-Request-Id"); got != "upstream-req-id" {
+		t.Fatalf("expected x-request-id passthrough, got %q", got)
+	}
+}

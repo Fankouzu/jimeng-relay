@@ -25,6 +25,7 @@ import (
 	internalerrors "github.com/jimeng-relay/server/internal/errors"
 	"github.com/jimeng-relay/server/internal/relay/upstream"
 	"github.com/jimeng-relay/server/internal/service/keymanager"
+	"github.com/volcengine/volc-sdk-golang/service/visual"
 )
 
 func TestClient_Submit_SignsAndCalls_AndDoesNotForwardDownstreamAuthorization(t *testing.T) {
@@ -1568,4 +1569,208 @@ func hmacSHA256(key []byte, message string) []byte {
 func sha256Hex(v []byte) string {
 	s := sha256.Sum256(v)
 	return hex.EncodeToString(s[:])
+}
+
+func TestClient_UpstreamParity(t *testing.T) {
+	// This test asserts parity between the direct Volcengine SDK call and our relay upstream client.
+	// It is currently expected to FAIL (RED phase) to document the parity gaps.
+
+	now := time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC)
+	ak := "ak_test"
+	sk := "sk_test"
+	region := "cn-north-1"
+
+	tests := []struct {
+		name    string
+		reqBody map[string]any
+	}{
+		{
+			name: "t2v-720",
+			reqBody: map[string]any{
+				"req_key":    "jimeng_t2v_v30_720p",
+				"prompt":     "a beautiful cat",
+				"resolution": "1280x720",
+			},
+		},
+		{
+			name: "i2v-first",
+			reqBody: map[string]any{
+				"req_key":   "jimeng_i2v_first_v30_1080",
+				"prompt":    "make the cat smile",
+				"image_url": "https://example.com/cat.png",
+			},
+		},
+		{
+			name: "i2v-first-tail",
+			reqBody: map[string]any{
+				"req_key":        "jimeng_i2v_first_tail_v30_1080",
+				"prompt":         "cat running",
+				"image_url":      "https://example.com/start.png",
+				"tail_image_url": "https://example.com/end.png",
+			},
+		},
+		{
+			name: "missing-req-key",
+			reqBody: map[string]any{
+				"prompt": "a cat",
+			},
+		},
+
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			type capturedRequest struct {
+				Method string
+				URL    *url.URL
+				Header http.Header
+				Body   []byte
+			}
+
+			var captured []capturedRequest
+			var mu sync.Mutex
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				mu.Lock()
+				captured = append(captured, capturedRequest{
+					Method: r.Method,
+					URL:    r.URL,
+					Header: r.Header.Clone(),
+					Body:   body,
+				})
+				mu.Unlock()
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"ResponseMetadata":{"RequestId":"test-req-id"},"Result":{"task_id":"test-task-id"}}`))
+			}))
+			defer srv.Close()
+
+			u, _ := url.Parse(srv.URL)
+
+			// 1. Direct SDK Call
+			v := visual.NewInstance()
+			v.Client.SetAccessKey(ak)
+			v.Client.SetSecretKey(sk)
+			v.SetRegion(region)
+			v.SetHost(u.Host)
+			v.SetSchema("http")
+
+			_, _, _ = v.CVSync2AsyncSubmitTask(tt.reqBody)
+
+			// 2. Relay Upstream Call
+			c, _ := upstream.NewClient(config.Config{
+				Credentials: config.Credentials{AccessKey: ak, SecretKey: sk},
+				Region:      region,
+				Host:        srv.URL,
+			}, upstream.Options{Now: func() time.Time { return now }})
+
+			relayBody, _ := json.Marshal(tt.reqBody)
+			_, _ = c.Submit(context.Background(), relayBody, nil)
+
+			if len(captured) != 2 {
+				t.Fatalf("expected 2 captured requests, got %d", len(captured))
+			}
+
+			direct := captured[0]
+			relay := captured[1]
+
+			// Parity Assertions
+			t.Run("ActionParity", func(t *testing.T) {
+				directAction := direct.URL.Query().Get("Action")
+				relayAction := relay.URL.Query().Get("Action")
+				if directAction != relayAction {
+					t.Errorf("Action mismatch: direct=%q relay=%q", directAction, relayAction)
+				}
+			})
+
+			t.Run("VersionParity", func(t *testing.T) {
+				directVersion := direct.URL.Query().Get("Version")
+				relayVersion := relay.URL.Query().Get("Version")
+				if directVersion != relayVersion {
+					t.Errorf("Version mismatch: direct=%q relay=%q", directVersion, relayVersion)
+				}
+			})
+
+			t.Run("BodyParity", func(t *testing.T) {
+				var directBody, relayBody map[string]any
+				_ = json.Unmarshal(direct.Body, &directBody)
+				_ = json.Unmarshal(relay.Body, &relayBody)
+
+				if !reflect.DeepEqual(directBody, relayBody) {
+					t.Errorf("Body mismatch:\ndirect: %s\nrelay:  %s", string(direct.Body), string(relay.Body))
+				}
+			})
+
+			t.Run("ReqKeyParity", func(t *testing.T) {
+				var directBody, relayBody map[string]any
+				_ = json.Unmarshal(direct.Body, &directBody)
+				_ = json.Unmarshal(relay.Body, &relayBody)
+
+				if directBody["req_key"] != relayBody["req_key"] {
+					t.Errorf("req_key mismatch: direct=%v relay=%v", directBody["req_key"], relayBody["req_key"])
+				}
+			})
+
+			t.Run("SigningHeadersParity", func(t *testing.T) {
+				// Check if essential signing headers are present in both
+				essential := []string{"Authorization", "X-Date", "X-Content-Sha256"}
+				for _, h := range essential {
+					if direct.Header.Get(h) == "" {
+						t.Errorf("Direct request missing header %s", h)
+					}
+					if relay.Header.Get(h) == "" {
+						t.Errorf("Relay request missing header %s", h)
+					}
+				}
+			})
+			t.Run("AuthorizationParity", func(t *testing.T) {
+				directAuth := direct.Header.Get("Authorization")
+				relayAuth := relay.Header.Get("Authorization")
+
+				// Parse and compare Credential scope
+				parseScope := func(auth string) string {
+					parts := strings.Split(auth, " ")
+					if len(parts) < 2 {
+						return ""
+					}
+					for _, p := range strings.Split(parts[1], ",") {
+						if strings.HasPrefix(strings.TrimSpace(p), "Credential=") {
+							return strings.TrimPrefix(strings.TrimSpace(p), "Credential=")
+						}
+					}
+					return ""
+				}
+
+				directScope := parseScope(directAuth)
+				relayScope := parseScope(relayAuth)
+
+				if directScope != relayScope {
+					t.Errorf("Authorization Credential scope mismatch:\ndirect: %q\nrelay:  %q", directScope, relayScope)
+				}
+			})
+			t.Run("HeaderParity", func(t *testing.T) {
+				// Compare non-signing headers
+				skip := map[string]bool{
+					"Authorization":    true,
+					"X-Date":           true,
+					"X-Content-Sha256": true,
+					"User-Agent":       true, // SDK might have its own UA
+					"Content-Length":   true,
+					"Accept-Encoding":  true,
+					"Connection":       true,
+				}
+
+				for k, v := range direct.Header {
+					if skip[k] {
+						continue
+					}
+					if relay.Header.Get(k) != v[0] {
+						t.Errorf("Header mismatch for %s: direct=%q relay=%q", k, v[0], relay.Header.Get(k))
+					}
+				}
+			})
+
+
+		})
+	}
 }
