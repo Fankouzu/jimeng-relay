@@ -140,3 +140,26 @@ go build -o ./bin/jimeng-server ./cmd/server/main.go
   - `429 Too Many Requests`：触发单 Key 并发限制或全局队列已满。
   - `502 Bad Gateway`：上游服务返回错误或请求超时。
 - **未覆盖能力**：当前版本仅支持即梦 4.0 图片及 3.0 视频的异步任务提交与查询，暂不支持同步接口或其他火山引擎服务。
+## 传输策略与限制
+
+### 1. 负载限制 (Payload Policy)
+- **最大请求体**：`20MiB`。
+  - **设计初衷**：支持视频生成中的“首尾帧”模式，允许同时嵌入两张本地图片（每张约 5MiB）及 JSON 封装开销。
+  - **超出行为**：立即返回 `400 Bad Request`，错误码 `ErrValidationFailed`。
+- **超时控制**：默认上游超时为 `30s` (由 `VOLC_TIMEOUT` 控制)。对于排队中的请求，客户端应适当调大超时时间。
+
+### 2. 行为等价性 (Parity Constraints)
+- **请求透传**：Relay 保证下游请求的 Body 原样转发至上游，不进行字段删减或重组。
+- **Header 映射**：透传 `Content-Type` 和 `Accept`。同时保留并透传 `X-Request-Id` 以实现全链路追踪。
+- **语义一致性**：Relay 仅作为鉴权与并发控制层，不改变即梦 API 的业务逻辑语义。直接调用与通过 Relay 调用在请求构造上应完全一致。
+
+## 故障排查 (50400 Triage)
+
+当接口返回 `50400` (Business Failed) 时，通常意味着请求已到达上游但业务逻辑校验未通过。请按以下步骤排查：
+
+1. **检查 Entitlement (权益)**：确认当前使用的火山引擎 AK/SK 是否拥有对应模型（如即梦 4.0）的调用权限。
+2. **验证 Scope (范围)**：确认请求的 `Action` 与 `Service` 是否匹配。Relay 仅支持 `cv` 服务。
+3. **核对 ReqKey**：视频生成对不同预设（Preset）有严格的 `req_key` 要求，请参考客户端文档中的 API 矩阵。
+4. **查看诊断字段**：Relay 返回的错误消息中包含完整的诊断上下文（Host, Region, Action, RequestID），请将其提供给技术支持。
+5. **资源可用性**：检查图片 URL 是否可公开访问，或 Base64 编码是否完整。
+

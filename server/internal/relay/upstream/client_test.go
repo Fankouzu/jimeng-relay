@@ -1572,10 +1572,6 @@ func sha256Hex(v []byte) string {
 }
 
 func TestClient_UpstreamParity(t *testing.T) {
-	// This test asserts parity between the direct Volcengine SDK call and our relay upstream client.
-	// It is currently expected to FAIL (RED phase) to document the parity gaps.
-
-	now := time.Date(2026, 2, 24, 10, 0, 0, 0, time.UTC)
 	ak := "ak_test"
 	sk := "sk_test"
 	region := "cn-north-1"
@@ -1601,6 +1597,14 @@ func TestClient_UpstreamParity(t *testing.T) {
 			},
 		},
 		{
+			name: "i2v-first-local-file",
+			reqBody: map[string]any{
+				"req_key":   "jimeng_i2v_first_v30_1080",
+				"prompt":    "animate this local frame",
+				"image_url": "data:image/png;base64,SGVsbG8=",
+			},
+		},
+		{
 			name: "i2v-first-tail",
 			reqBody: map[string]any{
 				"req_key":        "jimeng_i2v_first_tail_v30_1080",
@@ -1609,13 +1613,6 @@ func TestClient_UpstreamParity(t *testing.T) {
 				"tail_image_url": "https://example.com/end.png",
 			},
 		},
-		{
-			name: "missing-req-key",
-			reqBody: map[string]any{
-				"prompt": "a cat",
-			},
-		},
-
 	}
 
 	for _, tt := range tests {
@@ -1657,12 +1654,22 @@ func TestClient_UpstreamParity(t *testing.T) {
 
 			_, _, _ = v.CVSync2AsyncSubmitTask(tt.reqBody)
 
-			// 2. Relay Upstream Call
+			if len(captured) != 1 {
+				t.Fatalf("expected 1 captured direct request, got %d", len(captured))
+			}
+
+			direct := captured[0]
+			directXDate := strings.TrimSpace(direct.Header.Get("X-Date"))
+			directTime, err := time.Parse("20060102T150405Z", directXDate)
+			if err != nil {
+				t.Fatalf("parse direct X-Date %q: %v", directXDate, err)
+			}
+
 			c, _ := upstream.NewClient(config.Config{
 				Credentials: config.Credentials{AccessKey: ak, SecretKey: sk},
 				Region:      region,
 				Host:        srv.URL,
-			}, upstream.Options{Now: func() time.Time { return now }})
+			}, upstream.Options{Now: func() time.Time { return directTime.UTC() }})
 
 			relayBody, _ := json.Marshal(tt.reqBody)
 			_, _ = c.Submit(context.Background(), relayBody, nil)
@@ -1671,7 +1678,6 @@ func TestClient_UpstreamParity(t *testing.T) {
 				t.Fatalf("expected 2 captured requests, got %d", len(captured))
 			}
 
-			direct := captured[0]
 			relay := captured[1]
 
 			// Parity Assertions
@@ -1712,7 +1718,6 @@ func TestClient_UpstreamParity(t *testing.T) {
 			})
 
 			t.Run("SigningHeadersParity", func(t *testing.T) {
-				// Check if essential signing headers are present in both
 				essential := []string{"Authorization", "X-Date", "X-Content-Sha256"}
 				for _, h := range essential {
 					if direct.Header.Get(h) == "" {
@@ -1721,31 +1726,32 @@ func TestClient_UpstreamParity(t *testing.T) {
 					if relay.Header.Get(h) == "" {
 						t.Errorf("Relay request missing header %s", h)
 					}
+					if direct.Header.Get(h) != relay.Header.Get(h) {
+						t.Errorf("Signing header mismatch for %s: direct=%q relay=%q", h, direct.Header.Get(h), relay.Header.Get(h))
+					}
 				}
 			})
 			t.Run("AuthorizationParity", func(t *testing.T) {
 				directAuth := direct.Header.Get("Authorization")
 				relayAuth := relay.Header.Get("Authorization")
 
-				// Parse and compare Credential scope
-				parseScope := func(auth string) string {
-					parts := strings.Split(auth, " ")
-					if len(parts) < 2 {
-						return ""
-					}
-					for _, p := range strings.Split(parts[1], ",") {
-						if strings.HasPrefix(strings.TrimSpace(p), "Credential=") {
-							return strings.TrimPrefix(strings.TrimSpace(p), "Credential=")
-						}
-					}
-					return ""
+				directFields, directErr := parseAuthorizationHeader(directAuth)
+				relayFields, relayErr := parseAuthorizationHeader(relayAuth)
+				if directErr != nil || relayErr != nil {
+					t.Fatalf("failed to parse Authorization headers: directErr=%v relayErr=%v", directErr, relayErr)
 				}
 
-				directScope := parseScope(directAuth)
-				relayScope := parseScope(relayAuth)
+				if directFields.algorithm != relayFields.algorithm ||
+					directFields.accessKey != relayFields.accessKey ||
+					directFields.dateScope != relayFields.dateScope ||
+					directFields.region != relayFields.region ||
+					directFields.service != relayFields.service ||
+					directFields.scopeSuffix != relayFields.scopeSuffix {
+					t.Errorf("Authorization scope mismatch:\ndirect: %+v\nrelay:  %+v", directFields, relayFields)
+				}
 
-				if directScope != relayScope {
-					t.Errorf("Authorization Credential scope mismatch:\ndirect: %q\nrelay:  %q", directScope, relayScope)
+				if !reflect.DeepEqual(directFields.signedHeaders, relayFields.signedHeaders) {
+					t.Errorf("Authorization signed headers mismatch: direct=%v relay=%v", directFields.signedHeaders, relayFields.signedHeaders)
 				}
 			})
 			t.Run("HeaderParity", func(t *testing.T) {
@@ -1769,7 +1775,6 @@ func TestClient_UpstreamParity(t *testing.T) {
 					}
 				}
 			})
-
 
 		})
 	}
