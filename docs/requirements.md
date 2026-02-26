@@ -882,7 +882,7 @@ X-Date: 20260226T120000Z
 Idempotency-Key: unique-key-123
 
 {
-  "req_key": "jimeng_high_aes_general",
+  "req_key": "jimeng_t2i_v40",
   "prompt": "一张产品海报，简洁背景",
   "width": 2048,
   "height": 2048,
@@ -929,7 +929,7 @@ Authorization: HMAC-SHA256 Credential=ak/...
 X-Date: 20260226T120000Z
 
 {
-  "req_key": "jimeng_high_aes_general",
+  "req_key": "jimeng_t2i_v40",
   "task_id": "task_abc123"
 }
 ```

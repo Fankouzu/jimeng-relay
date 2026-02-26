@@ -162,6 +162,17 @@ jimeng download --task-id <task_id> --dir ./outputs --overwrite --format json
 
 ### 6.2 视频提交
 
+参数说明：
+- `--preset`：视频预设（必填）
+- `--prompt`：提示词（必填）
+- `--frames`：帧数，默认 `121` (针对 t2v)
+- `--aspect-ratio`：宽高比，默认 `16:9` (针对 t2v)
+- `--image-url` / `--image-file`：参考图输入
+- `--template`：运镜模板 ID (针对 i2v-recamera)
+- `--camera-strength`：运镜强度 `weak|medium|strong` (针对 i2v-recamera)
+
+示例：
+
 ```bash
 # 文生视频
 jimeng video submit \
@@ -170,7 +181,19 @@ jimeng video submit \
   --aspect-ratio 16:9 \
   --format json
 
-# 图生视频
+# 图生视频 (URL)
+jimeng video submit \
+  --preset i2v-first \
+  --prompt "让图片中的人物微笑" \
+  --image-url "https://example.com/input.png" \
+  --format json
+
+# 图生视频 (本地文件)
+jimeng video submit \
+  --preset i2v-first \
+  --prompt "让图片中的人物微笑" \
+  --image-file "./input.png" \
+  --format json
 jimeng video submit \
   --preset i2v-first \
   --prompt "让图片中的人物微笑" \
@@ -212,6 +235,15 @@ jimeng video download --task-id <task_id> --preset t2v-720 --dir ./outputs
 
 
 ## 8. 常见问题
+
+### 8.1 迁移指南 (Migration)
+
+从旧版 API 迁移到即梦 4.0 Relay 服务，**无需修改业务代码**。只需更新环境变量：
+- `VOLC_HOST`: 指向 Relay Server 地址（如 `relay.example.com`）
+- `VOLC_ACCESSKEY` / `VOLC_SECRETKEY`: 使用 Relay Server 生成的凭证
+- `VOLC_SCHEME`: 根据 Relay Server 配置选择 `http` 或 `https`
+
+### 8.2 并发限流 `50430`
 
 ### 8.1 并发限流 `50430`
 

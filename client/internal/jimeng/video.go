@@ -443,7 +443,7 @@ type videoErrorDiagnosticContext struct {
 
 func video50400ErrorMessage(ctx videoErrorDiagnosticContext) string {
 	return fmt.Sprintf(
-		"%s: code=%d status=%d message=%s preset=%s req_key=%s request_id=%s host=%s region=%s service=cv action=%s version=2022-08-31",
+		"%s: code=%d status=%d message=%s preset=%s req_key=%s request_id=%s host=%s region=%s service=cv action=%s version=2022-08-31 classification=entitlement_or_scope_mismatch next_steps=check_entitlement,verify_sigv4_scope,verify_req_key_for_preset,provide_request_id_to_support runbook=server/README.md#50400-triage",
 		ctx.operation,
 		ctx.code,
 		ctx.status,

@@ -483,6 +483,9 @@ func TestVideoErrorDiagnostics_50400(t *testing.T) {
 		require.ErrorContains(t, err, "service=cv")
 		require.ErrorContains(t, err, "action=CVSync2AsyncSubmitTask")
 		require.ErrorContains(t, err, "version=2022-08-31")
+		require.ErrorContains(t, err, "classification=entitlement_or_scope_mismatch")
+		require.ErrorContains(t, err, "next_steps=check_entitlement,verify_sigv4_scope,verify_req_key_for_preset,provide_request_id_to_support")
+		require.ErrorContains(t, err, "runbook=server/README.md#50400-triage")
 	})
 
 	t.Run("query path enrichment", func(t *testing.T) {
@@ -501,6 +504,9 @@ func TestVideoErrorDiagnostics_50400(t *testing.T) {
 		require.ErrorContains(t, err, "service=cv")
 		require.ErrorContains(t, err, "action=CVSync2AsyncGetResult")
 		require.ErrorContains(t, err, "version=2022-08-31")
+		require.ErrorContains(t, err, "classification=entitlement_or_scope_mismatch")
+		require.ErrorContains(t, err, "next_steps=check_entitlement,verify_sigv4_scope,verify_req_key_for_preset,provide_request_id_to_support")
+		require.ErrorContains(t, err, "runbook=server/README.md#50400-triage")
 	})
 
 	t.Run("non-50400 errors are not enriched", func(t *testing.T) {
@@ -527,6 +533,53 @@ func TestVideoErrorDiagnostics_50400(t *testing.T) {
 		require.NotContains(t, err.Error(), "preset=")
 		require.NotContains(t, err.Error(), "req_key=")
 		require.NotContains(t, err.Error(), "host=")
+		require.NotContains(t, err.Error(), "classification=entitlement_or_scope_mismatch")
+		require.NotContains(t, err.Error(), "next_steps=")
+		require.NotContains(t, err.Error(), "runbook=server/README.md#50400-triage")
+	})
+
+	t.Run("rate-limit errors are not misclassified as 50400 entitlement/scope", func(t *testing.T) {
+		server50430 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":50430,"status":50430,"message":"rate limited","request_id":"rid-50430"}`))
+		}))
+		defer server50430.Close()
+
+		parsedURL50430, err := url.Parse(server50430.URL)
+		require.NoError(t, err)
+
+		c50430, err := NewClient(config.Config{
+			Credentials: config.Credentials{AccessKey: "ak", SecretKey: "sk"},
+			Region:      "cn-north-1",
+			Host:        parsedURL50430.Host,
+			Scheme:      parsedURL50430.Scheme,
+		})
+		require.NoError(t, err)
+
+		_, err = c50430.GetVideoResult(context.Background(), VideoGetResultRequest{
+			TaskID: "task-50430",
+			Preset: api.VideoPresetT2V720,
+			ReqKey: api.ReqKeyJimengT2VV30_720p,
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "rate limited")
+		require.NotContains(t, err.Error(), "classification=entitlement_or_scope_mismatch")
+		require.NotContains(t, err.Error(), "next_steps=")
+		require.NotContains(t, err.Error(), "runbook=server/README.md#50400-triage")
+	})
+
+	t.Run("validation errors are not misclassified as 50400 entitlement/scope", func(t *testing.T) {
+		_, err := c.SubmitVideoTask(context.Background(), VideoSubmitRequest{
+			Preset:      api.VideoPreset("invalid-preset"),
+			Prompt:      "test prompt",
+			Frames:      121,
+			AspectRatio: "16:9",
+		})
+		require.Error(t, err)
+		require.Equal(t, internalerrors.ErrValidationFailed, internalerrors.GetCode(err))
+		require.NotContains(t, err.Error(), "classification=entitlement_or_scope_mismatch")
+		require.NotContains(t, err.Error(), "next_steps=")
+		require.NotContains(t, err.Error(), "runbook=server/README.md#50400-triage")
 	})
 }
 
