@@ -46,6 +46,7 @@ func RecoverMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 						tw.Header().Set("Content-Type", "application/json")
 						tw.WriteHeader(http.StatusInternalServerError)
 						if _, err := tw.Write([]byte(`{"error":{"code":"INTERNAL_ERROR","message":"internal server error"}}`)); err != nil {
+							logger.ErrorContext(r.Context(), "failed to write panic response", "error", err.Error())
 						}
 					}
 				}

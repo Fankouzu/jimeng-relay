@@ -579,6 +579,7 @@ func (f *fakeUpstream) handleGetResult(w http.ResponseWriter, body []byte) {
 		TaskID string `json:"task_id"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
+		payload.TaskID = ""
 	}
 	taskID := strings.TrimSpace(payload.TaskID)
 	if taskID == "" {
@@ -816,6 +817,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("writeJSON encode failed: %v", err)
 	}
 }
 
@@ -839,7 +841,14 @@ func extractTaskID(body []byte) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	taskID, _ := data["task_id"].(string)
+	taskIDVal, ok := data["task_id"]
+	if !ok {
+		return "", false
+	}
+	taskID, ok := taskIDVal.(string)
+	if !ok {
+		return "", false
+	}
 	taskID = strings.TrimSpace(taskID)
 	return taskID, taskID != ""
 }
@@ -853,7 +862,14 @@ func extractDataStatus(body []byte) string {
 	if !ok {
 		return ""
 	}
-	st, _ := data["status"].(string)
+	stVal, ok := data["status"]
+	if !ok {
+		return ""
+	}
+	st, ok := stVal.(string)
+	if !ok {
+		return ""
+	}
 	return strings.TrimSpace(st)
 }
 
@@ -866,7 +882,14 @@ func extractErrorCode(body []byte) string {
 	if !ok {
 		return ""
 	}
-	code, _ := errObj["code"].(string)
+	codeVal, ok := errObj["code"]
+	if !ok {
+		return ""
+	}
+	code, ok := codeVal.(string)
+	if !ok {
+		return ""
+	}
 	return strings.TrimSpace(code)
 }
 
@@ -971,8 +994,10 @@ func cleanupTCPPort(port int) error {
 			continue
 		}
 		if err := p.Signal(os.Interrupt); err != nil {
+			log.Printf("failed to signal interrupt pid %d: %v", proc.PID, err)
 		}
 		if err := p.Signal(os.Kill); err != nil {
+			log.Printf("failed to signal kill pid %d: %v", proc.PID, err)
 		}
 	}
 	return nil
