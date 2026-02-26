@@ -127,7 +127,13 @@ func TestKeyManager_CleanupKey(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("CleanupUnused", func(t *testing.T) {
-		handle, _ := svc.AcquireKey(ctx, "key1", "req1")
+		handle, err := svc.AcquireKey(ctx, "key1", "req1")
+		if err != nil {
+			t.Fatalf("acquire failed: %v", err)
+		}
+		if handle == nil {
+			t.Fatal("expected handle, got nil")
+		}
 		handle.Release()
 
 		svc.CleanupKey("key1")
@@ -142,10 +148,16 @@ func TestKeyManager_CleanupKey(t *testing.T) {
 	})
 
 	t.Run("CleanupInUse", func(t *testing.T) {
-		_, _ = svc.AcquireKey(ctx, "key2", "req3")
+		handle, err := svc.AcquireKey(ctx, "key2", "req3")
+		if err != nil {
+			t.Fatalf("acquire failed: %v", err)
+		}
+		if handle == nil {
+			t.Fatal("expected handle, got nil")
+		}
 		svc.CleanupKey("key2")
 
-		_, err := svc.AcquireKey(ctx, "key2", "req4")
+		_, err = svc.AcquireKey(ctx, "key2", "req4")
 		if errors.GetCode(err) != errors.ErrRateLimited {
 			t.Errorf("expected ErrRateLimited (not deleted), got %v", err)
 		}

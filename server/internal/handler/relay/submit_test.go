@@ -678,9 +678,16 @@ func TestSubmitHandler_StatusMapping(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("json.Unmarshal response: %v", err)
 			}
-			errorObj := payload["error"].(map[string]any)
-			if errorObj["code"].(string) != string(tt.expectedCode) {
-				t.Fatalf("expected error code %q, got %q", tt.expectedCode, errorObj["code"])
+			errorObj, ok := payload["error"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected error object, got %T", payload["error"])
+			}
+			code, ok := errorObj["code"].(string)
+			if !ok {
+				t.Fatalf("expected error code string, got %T", errorObj["code"])
+			}
+			if code != string(tt.expectedCode) {
+				t.Fatalf("expected error code %q, got %q", tt.expectedCode, code)
 			}
 		})
 	}
@@ -705,6 +712,3 @@ func TestSubmitHandler_WrappedRateLimited_ReturnsBadGateway(t *testing.T) {
 		t.Fatalf("expected status 502 for wrapped error, got %d", rec.Code)
 	}
 }
-
-
-

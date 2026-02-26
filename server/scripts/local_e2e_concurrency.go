@@ -132,7 +132,11 @@ func run() (runErr error) {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 	if !keepTmp {
-		defer func() { _ = os.RemoveAll(tmpDir) }()
+		defer func() {
+			if err := os.RemoveAll(tmpDir); err != nil {
+				log.Printf("temp dir cleanup failed: %v", err)
+			}
+		}()
 	}
 	dbPath := filepath.Join(tmpDir, "jimeng-relay-e2e.db")
 
@@ -153,7 +157,11 @@ func run() (runErr error) {
 	if err != nil {
 		return fmt.Errorf("open sqlite repos: %w", err)
 	}
-	defer func() { _ = repos.Close() }()
+	defer func() {
+		if err := repos.Close(); err != nil {
+			log.Printf("sqlite repos close failed: %v", err)
+		}
+	}()
 
 	auditSvc := auditservice.NewService(repos.DownstreamRequests, repos.UpstreamAttempts, repos.AuditEvents, auditservice.Config{})
 	idempotencySvc := idempotencyservice.NewService(repos.IdempotencyRecords, idempotencyservice.Config{})
@@ -173,8 +181,12 @@ func run() (runErr error) {
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = upstreamSrv.Shutdown(ctx)
-		_ = upstreamLn.Close()
+		if err := upstreamSrv.Shutdown(ctx); err != nil {
+			log.Printf("fake-upstream shutdown failed: %v", err)
+		}
+		if err := upstreamLn.Close(); err != nil {
+			log.Printf("fake-upstream listener close failed: %v", err)
+		}
 	}()
 
 	uClientCfg := config.Config{
@@ -202,8 +214,12 @@ func run() (runErr error) {
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = relaySrv.Shutdown(ctx)
-		_ = relayLn.Close()
+		if err := relaySrv.Shutdown(ctx); err != nil {
+			log.Printf("relay shutdown failed: %v", err)
+		}
+		if err := relayLn.Close(); err != nil {
+			log.Printf("relay listener close failed: %v", err)
+		}
 	}()
 
 	keySvc := apikeyservice.NewService(repos.APIKeys, apikeyservice.Config{SecretCipher: secretCipher})
@@ -498,8 +514,11 @@ func (f *fakeUpstream) handle(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	body, _ := io.ReadAll(r.Body)
-	_ = body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "read body", http.StatusInternalServerError)
+		return
+	}
 
 	switch action {
 	case "CVSync2AsyncSubmitTask":
@@ -559,7 +578,8 @@ func (f *fakeUpstream) handleGetResult(w http.ResponseWriter, body []byte) {
 	var payload struct {
 		TaskID string `json:"task_id"`
 	}
-	_ = json.Unmarshal(body, &payload)
+	if err := json.Unmarshal(body, &payload); err != nil {
+	}
 	taskID := strings.TrimSpace(payload.TaskID)
 	if taskID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": 40011, "message": "invalid task_id"})
@@ -629,8 +649,14 @@ func signedPOST(ctx context.Context, hc *http.Client, endpoint string, body []by
 	if err != nil {
 		return 0, nil, nil, dur, err
 	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
+	b, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if readErr != nil {
+		return resp.StatusCode, resp.Header.Clone(), nil, dur, readErr
+	}
+	if closeErr != nil {
+		return resp.StatusCode, resp.Header.Clone(), b, dur, closeErr
+	}
 	return resp.StatusCode, resp.Header.Clone(), b, dur, nil
 }
 
@@ -775,7 +801,9 @@ func deriveSigningKey(secret, date, region, service, suffix string) []byte {
 
 func hmacSHA256(key []byte, message string) []byte {
 	h := hmac.New(sha256.New, key)
-	_, _ = h.Write([]byte(message))
+	if _, err := h.Write([]byte(message)); err != nil {
+		panic(err)
+	}
 	return h.Sum(nil)
 }
 
@@ -787,7 +815,8 @@ func sha256Hex(v []byte) string {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+	}
 }
 
 func randomHex(n int) string {
@@ -852,11 +881,16 @@ func writeArtifact(path string, a artifact) error {
 	if err != nil {
 		return fmt.Errorf("create artifact: %w", err)
 	}
-	defer f.Close()
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(a); err != nil {
+		if closeErr := f.Close(); closeErr != nil {
+			log.Printf("artifact file close failed after encode error: %v", closeErr)
+		}
 		return fmt.Errorf("write artifact: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close artifact: %w", err)
 	}
 	return nil
 }
@@ -936,8 +970,10 @@ func cleanupTCPPort(port int) error {
 		if err != nil {
 			continue
 		}
-		_ = p.Signal(os.Interrupt)
-		_ = p.Signal(os.Kill)
+		if err := p.Signal(os.Interrupt); err != nil {
+		}
+		if err := p.Signal(os.Kill); err != nil {
+		}
 	}
 	return nil
 }
@@ -961,7 +997,11 @@ func parseLsofProcs(out []byte) []lsofProc {
 			if cur.PID > 0 {
 				procs = append(procs, cur)
 			}
-			pid, _ := strconv.Atoi(strings.TrimSpace(line[1:]))
+			pid, err := strconv.Atoi(strings.TrimSpace(line[1:]))
+			if err != nil {
+				cur = lsofProc{}
+				continue
+			}
 			cur = lsofProc{PID: pid}
 		case 'c':
 			cur.Command = strings.TrimSpace(line[1:])

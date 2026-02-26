@@ -22,8 +22,8 @@ const (
 	EnvUpstreamMaxConcurrent     = "UPSTREAM_MAX_CONCURRENT"
 	EnvUpstreamMaxQueue          = "UPSTREAM_MAX_QUEUE"
 	EnvUpstreamSubmitMinInterval = "UPSTREAM_SUBMIT_MIN_INTERVAL"
-	EnvPerKeyMaxConcurrent     = "PER_KEY_MAX_CONCURRENT"
-	EnvPerKeyMaxQueue          = "PER_KEY_MAX_QUEUE"
+	EnvPerKeyMaxConcurrent       = "PER_KEY_MAX_CONCURRENT"
+	EnvPerKeyMaxQueue            = "PER_KEY_MAX_QUEUE"
 )
 
 const (
@@ -36,8 +36,8 @@ const (
 	DefaultUpstreamMaxConcurrent     = 1
 	DefaultUpstreamMaxQueue          = 100
 	DefaultUpstreamSubmitMinInterval = 0 * time.Second
-	DefaultPerKeyMaxConcurrent     = 1
-	DefaultPerKeyMaxQueue          = 1
+	DefaultPerKeyMaxConcurrent       = 1
+	DefaultPerKeyMaxQueue            = 1
 )
 
 type Config struct {
@@ -52,8 +52,8 @@ type Config struct {
 	UpstreamMaxConcurrent     int
 	UpstreamMaxQueue          int
 	UpstreamSubmitMinInterval time.Duration
-	PerKeyMaxConcurrent     int
-	PerKeyMaxQueue          int
+	PerKeyMaxConcurrent       int
+	PerKeyMaxQueue            int
 }
 
 func (c Config) LogValue() slog.Value {
@@ -98,8 +98,8 @@ func Load(opts Options) (Config, error) {
 		UpstreamMaxConcurrent:     DefaultUpstreamMaxConcurrent,
 		UpstreamMaxQueue:          DefaultUpstreamMaxQueue,
 		UpstreamSubmitMinInterval: DefaultUpstreamSubmitMinInterval,
-		PerKeyMaxConcurrent:     DefaultPerKeyMaxConcurrent,
-		PerKeyMaxQueue:          DefaultPerKeyMaxQueue,
+		PerKeyMaxConcurrent:       DefaultPerKeyMaxConcurrent,
+		PerKeyMaxQueue:            DefaultPerKeyMaxQueue,
 	}
 
 	envFile := ".env"
@@ -278,7 +278,9 @@ func LoadEnvFile(path string) error {
 
 		if key != "" {
 			if _, ok := os.LookupEnv(key); !ok {
-				os.Setenv(key, value)
+				if err := os.Setenv(key, value); err != nil {
+					return fmt.Errorf("failed to set env %s: %w", key, err)
+				}
 			}
 		}
 	}

@@ -577,7 +577,9 @@ func TestClient_Submit_GlobalQueueFull_ReturnsErrRateLimitedImmediately(t *testi
 		}
 		<-releaseFirst
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
+		if _, err := w.Write([]byte(`{"ok":true}`)); err != nil {
+			return
+		}
 	}))
 	t.Cleanup(srv.Close)
 

@@ -187,7 +187,9 @@ func TestRateLimitVideo_SameAPIKeyConcurrentSubmitReturns429(t *testing.T) {
 				<-releaseUpstream
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`))
+				if _, err := w.Write([]byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`)); err != nil {
+					return
+				}
 			}))
 			defer srv.Close()
 
@@ -302,7 +304,9 @@ func TestRateLimitVideo_GlobalQueueFullSubmitReturns429(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`))
+				if _, err := w.Write([]byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`)); err != nil {
+					return
+				}
 			}))
 			defer srv.Close()
 
