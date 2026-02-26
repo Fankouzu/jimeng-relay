@@ -602,28 +602,44 @@ func init() {
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.imageURL, "image-url", "", "Input image URL")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.template, "template", "", "Template ID")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.cameraStrength, "camera-strength", "", "Camera strength: weak|medium|strong")
-	_ = videoSubmitCmd.MarkFlagRequired("preset")
+	if err := videoSubmitCmd.MarkFlagRequired("preset"); err != nil {
+		panic(err)
+	}
 
 	// Video Query Flags
 	videoQueryCmd.Flags().StringVar(&videoQueryFlags.taskID, "task-id", "", "Task ID (required)")
 	videoQueryCmd.Flags().StringVar(&videoQueryFlags.preset, "preset", "", "Model preset (required)")
-	_ = videoQueryCmd.MarkFlagRequired("task-id")
-	_ = videoQueryCmd.MarkFlagRequired("preset")
+	if err := videoQueryCmd.MarkFlagRequired("task-id"); err != nil {
+		panic(err)
+	}
+	if err := videoQueryCmd.MarkFlagRequired("preset"); err != nil {
+		panic(err)
+	}
 
 	// Video Wait Flags
 	videoWaitCmd.Flags().StringVar(&videoWaitFlags.taskID, "task-id", "", "Task ID (required)")
 	videoWaitCmd.Flags().StringVar(&videoWaitFlags.preset, "preset", "", "Model preset (required)")
 	videoWaitCmd.Flags().StringVar(&videoWaitFlags.interval, "interval", "2s", "Poll interval duration, e.g. 2s")
 	videoWaitCmd.Flags().StringVar(&videoWaitFlags.timeout, "wait-timeout", "5m", "Max wait duration, e.g. 60s, 5m")
-	_ = videoWaitCmd.MarkFlagRequired("task-id")
-	_ = videoWaitCmd.MarkFlagRequired("preset")
+	if err := videoWaitCmd.MarkFlagRequired("task-id"); err != nil {
+		panic(err)
+	}
+	if err := videoWaitCmd.MarkFlagRequired("preset"); err != nil {
+		panic(err)
+	}
 
 	// Video Download Flags
 	videoDownloadCmd.Flags().StringVar(&videoDownloadFlags.taskID, "task-id", "", "Task ID (required)")
 	videoDownloadCmd.Flags().StringVar(&videoDownloadFlags.preset, "preset", "", "Model preset (required)")
 	videoDownloadCmd.Flags().StringVar(&videoDownloadFlags.dir, "dir", "", "Download directory (required)")
 	videoDownloadCmd.Flags().BoolVar(&videoDownloadFlags.overwrite, "overwrite", false, "Overwrite existing files")
-	_ = videoDownloadCmd.MarkFlagRequired("task-id")
-	_ = videoDownloadCmd.MarkFlagRequired("preset")
-	_ = videoDownloadCmd.MarkFlagRequired("dir")
+	if err := videoDownloadCmd.MarkFlagRequired("task-id"); err != nil {
+		panic(err)
+	}
+	if err := videoDownloadCmd.MarkFlagRequired("preset"); err != nil {
+		panic(err)
+	}
+	if err := videoDownloadCmd.MarkFlagRequired("dir"); err != nil {
+		panic(err)
+	}
 }

@@ -1,8 +1,8 @@
 package test
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestTestUtilExists(t *testing.T) {

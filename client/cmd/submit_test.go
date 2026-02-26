@@ -46,7 +46,9 @@ func TestProcessImageURLs_ExistingRelativePathWithoutPrefix(t *testing.T) {
 		t.Fatalf("getwd: %v", err)
 	}
 	defer func() {
-		_ = os.Chdir(oldWd)
+		if err := os.Chdir(oldWd); err != nil {
+			t.Errorf("failed to restore working directory: %v", err)
+		}
 	}()
 
 	if err := os.Chdir(tmpDir); err != nil {
