@@ -4,10 +4,10 @@
   <img src="https://img.shields.io/badge/API-即梦4.0-blueviolet" alt="API">
 </p>
 
-<h1 align="center">🎬 即梦图片 4.0 API 中转服务</h1>
+<h1 align="center">🎬 即梦 4.0 API 中转服务</h1>
 
 <p align="center">
-  <b>Jimeng Relay</b> — 高性能 AI 图片生成 API 网关<br>
+  <b>Jimeng Relay</b> — 高性能 AI 图片/视频生成 API 网关<br>
   <sub>统一鉴权 · 审计追踪 · 并发控制 · 幂等支持</sub>
 </p>
 
@@ -15,7 +15,7 @@
 
 ## 📖 项目简介
 
-即梦图片 4.0 API 中转服务是一个位于客户端与火山引擎即梦 4.0 API 之间的高性能网关服务，为 AI 图片生成场景提供企业级的可靠性保障。
+即梦 4.0 API 中转服务是一个位于客户端与火山引擎即梦 4.0 API 之间的高性能网关服务，为 AI 图像与视频生成场景提供企业级的可靠性保障。
 
 ```
 ┌─────────────┐      ┌─────────────────────┐      ┌─────────────────┐
@@ -43,7 +43,8 @@
 ### 🎯 能力边界
 
 **支持**
-- 文生图 (Text-to-Image)
+- 文生图 (Text-to-Image) / 文生视频 (Text-to-Video)
+- 图生图 (Image-to-Image) / 图生视频 (Image-to-Video)
 - 图生图 (Image-to-Image，支持 URL 和本地文件)
 - 异步任务提交与结果查询
 
@@ -95,6 +96,13 @@ go build -o ./bin/jimeng .
 ./bin/jimeng submit \
   --prompt "将这张图片转成水彩画风格" \
   --image-file ./input.png \
+  --format json
+```
+
+# 文生视频
+./bin/jimeng video submit \
+  --preset t2v-720 \
+  --prompt "一只在森林中奔跑的小狗" \
   --format json
 ```
 
@@ -220,5 +228,5 @@ MIT License
 ---
 
 <p align="center">
-  <sub>Built with ❤️ for AI Image Generation</sub>
+  <sub>Built with ❤️ for AI Image & Video Generation</sub>
 </p>

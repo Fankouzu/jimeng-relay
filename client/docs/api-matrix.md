@@ -1,8 +1,8 @@
-# 即梦AI图片生成4.0 API矩阵（冻结版）
+# 即梦 AI 图片/视频生成 4.0 API 矩阵（冻结版）
 
 ## 范围与冻结约束
 
-- 仅覆盖即梦AI图片生成4.0（`req_key=jimeng_t2i_v40`）。
+- 覆盖即梦 AI 图片生成 4.0 (`req_key=jimeng_t2i_v40`) 及视频生成 3.0。
 - API 动作仅允许：`CVSync2AsyncSubmitTask`、`CVSync2AsyncGetResult`。
 - 不纳入 `CVProcess` / `GetTaskResult` 主路径。
 
@@ -17,7 +17,9 @@
 | 命令名 | Action | req_key | 说明 |
 | --- | --- | --- | --- |
 | `jimeng.image.v40.submit` | `CVSync2AsyncSubmitTask` | `jimeng_t2i_v40` | 提交图片生成任务 |
-| `jimeng.image.v40.get` | `CVSync2AsyncGetResult` | `jimeng_t2i_v40` | 查询任务状态与结果 |
+| `jimeng.image.v40.get` | `CVSync2AsyncGetResult` | `jimeng_t2i_v40` | 查询图片任务状态与结果 |
+| `jimeng.video.v30.submit` | `CVSync2AsyncSubmitTask` | (见下表) | 提交视频生成任务 |
+| `jimeng.video.v30.get` | `CVSync2AsyncGetResult` | (见下表) | 查询视频任务状态与结果 |
 
 ## 参数矩阵
 
@@ -50,7 +52,27 @@
   - `data.status` (`string`)：任务状态
   - `data.image_urls` (`[]string|null`)：结果图片 URL
   - `data.binary_data_base64` (`[]string|null`)：base64 结果
-  - `code` / `status` / `message` / `request_id` / `time_elapsed`
+  | `code` / `status` / `message` / `request_id` / `time_elapsed` | | | |
+
+## 视频生成预设矩阵 (Video 3.0)
+
+| 预设 (Preset) | 对应 ReqKey | 变体 (Variant) | 说明 |
+| :--- | :--- | :--- | :--- |
+| `t2v-720` | `jimeng_t2v_v30_720p` | `t2v` | 文生视频 720p |
+| `t2v-1080` | `jimeng_t2v_v30_1080p` | `t2v` | 文生视频 1080p |
+| `i2v-first` | `jimeng_i2v_first_v30_1080` | `i2v-first-frame` | 图生视频 (首帧) |
+| `i2v-first-tail` | `jimeng_i2v_first_tail_v30_1080` | `i2v-first-tail` | 图生视频 (首尾帧) |
+| `i2v-recamera` | `jimeng_i2v_recamera_v30` | `i2v-recamera` | 图生视频 (运镜) |
+
+### 视频提交参数 (Video Submit)
+
+- `prompt` (`string`)：提示词
+- `frames` (`int`)：帧数
+- `aspect_ratio` (`string`)：宽高比
+- `image_urls` (`[]string`)：参考图 URL
+- `template_id` (`string`)：模板 ID
+- `camera_strength` (`string`)：运镜强度 (`weak`, `medium`, `strong`)
+- `return_url` (`bool`)：固定为 `true`
 
 ## 状态机（统一枚举）
 

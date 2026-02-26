@@ -310,3 +310,76 @@ func sanitizeTaskID(taskID string) string {
 		}
 	}, key)
 }
+
+func (c *Client) DownloadVideo(ctx context.Context, taskID string, videoURL string, opts FlowOptions) (string, error) {
+	dir := strings.TrimSpace(opts.DownloadDir)
+	if dir == "" {
+		return "", fmt.Errorf("download dir is required")
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create download dir failed: %w", err)
+	}
+
+	if videoURL == "" {
+		return "", fmt.Errorf("video url is empty")
+	}
+
+	u, err := url.Parse(videoURL)
+	if err != nil {
+		return "", fmt.Errorf("parse video url failed: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported video url scheme: %s", u.Scheme)
+	}
+
+	taskKey := sanitizeTaskID(taskID)
+	base := path.Base(u.Path)
+	if base == "." || base == "/" || base == "" {
+		base = "video.mp4"
+	}
+
+	// Ensure deterministic naming: <task_id>-<original_name>
+	fileName := fmt.Sprintf("%s-%s", taskKey, base)
+	filePath := filepath.Join(dir, fileName)
+
+	flags := os.O_CREATE | os.O_WRONLY
+	if opts.Overwrite {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+
+	output, err := os.OpenFile(filePath, flags, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return "", fmt.Errorf("file already exists: %s (use --overwrite to replace)", filePath)
+		}
+		return "", fmt.Errorf("open output file failed: %w", err)
+	}
+	defer output.Close()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, videoURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("create download request failed: %w", err)
+	}
+
+	resp, err := imageDownloadHTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send download request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("download failed: status=%d (URL might be expired or invalid)", resp.StatusCode)
+		}
+		return "", fmt.Errorf("download request returned status=%d", resp.StatusCode)
+	}
+
+	if _, err := io.Copy(output, resp.Body); err != nil {
+		return "", fmt.Errorf("write video content failed: %w", err)
+	}
+
+	return filePath, nil
+}

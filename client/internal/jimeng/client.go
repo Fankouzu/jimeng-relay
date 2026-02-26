@@ -1,17 +1,19 @@
 package jimeng
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
-	"github.com/volcengine/volc-sdk-golang/service/visual"
 	"github.com/jimeng-relay/client/internal/config"
+	"github.com/volcengine/volc-sdk-golang/service/visual"
 )
 
 type Client struct {
-	visual *visual.Visual
-	config config.Config
-	logger *slog.Logger
+	visual         *visual.Visual
+	config         config.Config
+	logger         *slog.Logger
+	videoGetResult func(ctx context.Context, req VideoGetResultRequest) (*VideoGetResultResponse, error)
 }
 
 func NewClient(cfg config.Config) (*Client, error) {

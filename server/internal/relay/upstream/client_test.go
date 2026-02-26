@@ -552,6 +552,114 @@ func TestClient_GetResult_WaitsForGlobalQueue(t *testing.T) {
 	}
 }
 
+func TestClient_Submit_GlobalQueueFull_ReturnsErrRateLimitedImmediately(t *testing.T) {
+	started := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var releaseFirstOnce sync.Once
+	releaseFirstGate := func() {
+		releaseFirstOnce.Do(func() {
+			close(releaseFirst)
+		})
+	}
+	defer releaseFirstGate()
+
+	var requestCount int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("Action") != "CVSync2AsyncSubmitTask" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		atomic.AddInt32(&requestCount, 1)
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+		<-releaseFirst
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := upstream.NewClient(config.Config{
+		Credentials: config.Credentials{AccessKey: "ak", SecretKey: "sk"},
+		Region:      "cn-north-1",
+		Host:        srv.URL,
+		Timeout:     2 * time.Second,
+	}, upstream.Options{
+		MaxConcurrent: 1,
+		MaxQueue:      1,
+	})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, submitErr := c.Submit(context.Background(), []byte(`{"req_key":"jimeng_video_v30"}`), nil)
+		firstDone <- submitErr
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("first submit did not reach upstream in time")
+	}
+
+	type callResult struct {
+		resp *upstream.Response
+		err  error
+	}
+	secondDone := make(chan callResult, 1)
+	go func() {
+		resp, submitErr := c.Submit(context.Background(), []byte(`{"req_key":"jimeng_video_v30"}`), nil)
+		secondDone <- callResult{resp: resp, err: submitErr}
+	}()
+
+	waitForUpstreamWaitersLen(t, c, 1)
+
+	thirdDone := make(chan callResult, 1)
+	go func() {
+		resp, submitErr := c.Submit(context.Background(), []byte(`{"req_key":"jimeng_video_v30"}`), nil)
+		thirdDone <- callResult{resp: resp, err: submitErr}
+	}()
+
+	select {
+	case out := <-thirdDone:
+		if out.err == nil {
+			t.Fatalf("expected third submit to be rate limited by full queue")
+		}
+		if out.resp != nil {
+			t.Fatalf("expected nil response on queue full rate limit, got %+v", out.resp)
+		}
+		if internalerrors.GetCode(out.err) != internalerrors.ErrRateLimited {
+			t.Fatalf("expected RATE_LIMITED, got code=%s err=%v", internalerrors.GetCode(out.err), out.err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("queue-full rejection should be immediate, but third request did not finish in time")
+	}
+
+	if got := atomic.LoadInt32(&requestCount); got != 1 {
+		t.Fatalf("expected only one upstream request, got %d", got)
+	}
+
+	releaseFirstGate()
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first submit unexpected error: %v", err)
+	}
+
+	out2 := <-secondDone
+	if out2.err != nil {
+		t.Fatalf("second (queued) submit unexpected error: %v", out2.err)
+	}
+	if out2.resp == nil || out2.resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected second response: %+v", out2.resp)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Fatalf("expected two upstream requests (first + dequeued second), got %d", got)
+	}
+}
+
 func TestClient_Submit_SameAPIKeySecondConcurrentRequestRateLimitedImmediately(t *testing.T) {
 	started := make(chan struct{})
 	releaseFirst := make(chan struct{})

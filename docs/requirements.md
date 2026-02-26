@@ -1,4 +1,4 @@
-# 即梦图片4.0 API中转服务 - 需求规格说明书
+# 即梦 4.0 API中转服务 - 需求规格说明书
 
 > **版本**: v1.0.0  
 > **更新日期**: 2026-02-26  
@@ -29,7 +29,7 @@
 
 ### 1.1 项目背景
 
-即梦图片4.0 API中转服务（Jimeng Relay）是一个高性能的API网关服务，位于客户端与火山引擎即梦4.0 API之间，提供：
+即梦 4.0 API中转服务（Jimeng Relay）是一个高性能的API网关服务，位于客户端与火山引擎即梦4.0 API之间，提供：
 
 - **统一鉴权**：AWS SigV4签名算法验证客户端身份
 - **审计追踪**：记录所有请求和响应的完整生命周期
@@ -67,7 +67,8 @@
 #### 已支持
 - 即梦4.0异步任务提交 (`CVSync2AsyncSubmitTask`)
 - 即梦4.0结果查询 (`CVSync2AsyncGetResult`)
-- 文生图 (t2i)
+- 文生图 (t2i) / 文生视频 (t2v)
+- 图生图 (i2i) / 图生视频 (i2v)
 - 图生图 (i2i，URL和本地文件)
 
 #### 不支持
@@ -122,16 +123,19 @@
 
 | 命令 | 描述 | 优先级 |
 |------|------|--------|
-| submit | 提交图片生成任务 | P0 |
-| query | 查询任务状态 | P0 |
-| wait | 等待任务完成 | P0 |
-| download | 下载生成的图片 | P0 |
+| submit | 提交图片/视频生成任务 | P0 |
+| query | 查询任务状态 (支持图片/视频) | P0 |
+| wait | 等待任务完成 (支持图片/视频) | P0 |
+| download | 下载生成的图片/视频 | P0 |
 
 #### 2.2.2 生成模式
 
 | 模式 | 描述 | 优先级 |
 |------|------|--------|
 | 文生图(t2i) | 根据文字描述生成图片 | P0 |
+| 图生图(i2i) | 基于图片进行变换 | P0 |
+| 文生视频(t2v) | 根据文字描述生成视频 | P0 |
+| 图生视频(i2v) | 基于图片生成视频 | P0 |
 | 图生图(i2i-URL) | 基于URL图片进行变换 | P0 |
 | 图生图(i2i-File) | 基于本地文件进行变换 | P0 |
 
@@ -1042,7 +1046,7 @@ go run ./scripts/local_e2e_concurrency.go
 #### 运行时崩溃隔离
 
 ```go
-// 顶层panic恢复中间件
+// 顶层panic recovery中间件
 func RecoverMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         defer func() {
@@ -1254,5 +1258,4 @@ openssl rand -base64 32
 | Panic崩溃 | 查看recover中间件日志 |
 
 ---
-
 *文档版本: v1.0.0 | 最后更新: 2026-02-26*
