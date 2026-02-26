@@ -19,6 +19,7 @@ type videoSubmitFlagValues struct {
 	frames         int
 	aspectRatio    string
 	imageURL       string
+	imageFile      []string
 	template       string
 	cameraStrength string
 }
@@ -136,9 +137,20 @@ func buildVideoSubmitRequest() (jimeng.VideoSubmitRequest, error) {
 		return jimeng.VideoSubmitRequest{}, fmt.Errorf("--frames must be positive")
 	}
 
+	if videoSubmitFlags.imageURL != "" && len(videoSubmitFlags.imageFile) > 0 {
+		return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url and --image-file cannot be used together")
+	}
+
 	imageURLs, err := parseVideoImageURLs(videoSubmitFlags.imageURL)
 	if err != nil {
 		return jimeng.VideoSubmitRequest{}, err
+	}
+	if len(videoSubmitFlags.imageFile) > 0 {
+		// T7 will implement real base64 conversion.
+		// For now, we just use the paths to satisfy count validation.
+		for _, f := range videoSubmitFlags.imageFile {
+			imageURLs = append(imageURLs, f)
+		}
 	}
 
 	cameraStrength, err := normalizeVideoCameraStrength(videoSubmitFlags.cameraStrength)
@@ -165,19 +177,25 @@ func buildVideoSubmitRequest() (jimeng.VideoSubmitRequest, error) {
 			req.AspectRatio = "16:9"
 		}
 		if len(req.ImageURLs) > 0 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url is not allowed for %q", preset)
+			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url or --image-file is not allowed for %q", preset)
 		}
 	case api.VideoPresetI2VFirst:
 		if len(req.ImageURLs) == 0 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url is required for %q", preset)
+			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input is required for %q", preset)
+		}
+		if len(req.ImageURLs) != 1 {
+			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input for %q requires exactly 1 image (URL or file)", preset)
 		}
 	case api.VideoPresetI2VFirstTail:
 		if len(req.ImageURLs) != 2 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url for %q requires exactly 2 URLs (comma-separated)", preset)
+			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input for %q requires exactly 2 images (URLs or files)", preset)
 		}
 	case api.VideoPresetI2VRecamera:
 		if len(req.ImageURLs) == 0 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url is required for %q", preset)
+			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input is required for %q", preset)
+		}
+		if len(req.ImageURLs) != 1 {
+			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input for %q requires exactly 1 image (URL or file)", preset)
 		}
 		if req.TemplateID == "" {
 			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--template is required for %q", preset)
@@ -599,7 +617,8 @@ func init() {
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.prompt, "prompt", "", "Prompt text")
 	videoSubmitCmd.Flags().IntVar(&videoSubmitFlags.frames, "frames", 0, "Number of frames")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.aspectRatio, "aspect-ratio", "", "Aspect ratio")
-	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.imageURL, "image-url", "", "Input image URL")
+	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.imageURL, "image-url", "", "Input image URL (legacy comma-separated)")
+	videoSubmitCmd.Flags().StringArrayVar(&videoSubmitFlags.imageFile, "image-file", nil, "Input local image file path (repeatable, mutual exclusive with --image-url)")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.template, "template", "", "Template ID")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.cameraStrength, "camera-strength", "", "Camera strength: weak|medium|strong")
 	if err := videoSubmitCmd.MarkFlagRequired("preset"); err != nil {

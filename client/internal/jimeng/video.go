@@ -2,7 +2,10 @@ package jimeng
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -106,6 +109,14 @@ func (c *Client) SubmitVideoTask(ctx context.Context, req VideoSubmitRequest) (*
 		)
 	}
 
+	if len(req.ImageURLs) > 0 {
+		prepared, err := prepareVideoImageURLs(req.ImageURLs)
+		if err != nil {
+			return nil, err
+		}
+		req.ImageURLs = prepared
+	}
+
 	if err := ValidateVideoSubmitRequest(&req); err != nil {
 		return nil, err
 	}
@@ -180,6 +191,24 @@ func (c *Client) SubmitVideoTask(ctx context.Context, req VideoSubmitRequest) (*
 	timeElapsed := submitToInt(respBody["time_elapsed"])
 
 	if code != 10000 || status != 10000 {
+		if code == 50400 || status == 50400 {
+			return nil, internalerrors.New(
+				internalerrors.ErrBusinessFailed,
+				video50400ErrorMessage(videoErrorDiagnosticContext{
+					operation: "submit task business failed",
+					preset:    req.Preset,
+					reqKey:    reqKey,
+					host:      c.config.Host,
+					region:    c.config.Region,
+					action:    api.ActionSubmitTask,
+					code:      code,
+					status:    status,
+					message:   message,
+					requestID: requestID,
+				}),
+				nil,
+			)
+		}
 		return nil, internalerrors.New(
 			internalerrors.ErrBusinessFailed,
 			fmt.Sprintf("submit task business failed: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
@@ -205,6 +234,62 @@ func (c *Client) SubmitVideoTask(ctx context.Context, req VideoSubmitRequest) (*
 		RequestID:   requestID,
 		TimeElapsed: timeElapsed,
 	}, nil
+}
+
+func prepareVideoImageURLs(raw []string) ([]string, error) {
+	urls := submitCleanStringSlice(raw)
+	if len(urls) == 0 {
+		return nil, nil
+	}
+
+	out := make([]string, 0, len(urls))
+	for _, u := range urls {
+		lower := strings.ToLower(u)
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "data:") {
+			out = append(out, u)
+			continue
+		}
+
+		isPathLike := strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") || strings.HasPrefix(u, "/")
+		if !isPathLike {
+			if _, err := os.Stat(u); err != nil {
+				out = append(out, u)
+				continue
+			}
+		}
+
+		info, err := os.Stat(u)
+		if err != nil {
+			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("stat --image-file %q failed", u), err)
+		}
+		if info.IsDir() {
+			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("--image-file %q is a directory", u), nil)
+		}
+		if info.Size() <= 0 {
+			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("--image-file %q is empty", u), nil)
+		}
+		if info.Size() > int64(maxVideoInlineImageBytes) {
+			return nil, internalerrors.New(
+				internalerrors.ErrValidationFailed,
+				fmt.Sprintf("--image-file %q exceeds max size %d bytes; compress it or upload it to a URL", u, maxVideoInlineImageBytes),
+				nil,
+			)
+		}
+
+		data, err := os.ReadFile(u)
+		if err != nil {
+			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("read --image-file %q failed", u), err)
+		}
+		mime := http.DetectContentType(data)
+		if !strings.HasPrefix(mime, "image/") {
+			mime = "image/png"
+		}
+
+		encoded := base64.StdEncoding.EncodeToString(data)
+		out = append(out, fmt.Sprintf("data:%s;base64,%s", mime, encoded))
+	}
+
+	return out, nil
 }
 
 func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) (*VideoGetResultResponse, error) {
@@ -273,6 +358,24 @@ func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) 
 		}
 
 		if code != 10000 || status != 10000 {
+			if code == 50400 || status == 50400 {
+				return internalerrors.New(
+					internalerrors.ErrBusinessFailed,
+					video50400ErrorMessage(videoErrorDiagnosticContext{
+						operation: "query task business failed",
+						preset:    req.Preset,
+						reqKey:    reqKey,
+						host:      c.config.Host,
+						region:    c.config.Region,
+						action:    api.ActionGetResult,
+						code:      code,
+						status:    status,
+						message:   message,
+						requestID: requestID,
+					}),
+					nil,
+				)
+			}
 			return internalerrors.New(
 				internalerrors.ErrBusinessFailed,
 				fmt.Sprintf("query task business failed: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
@@ -323,4 +426,33 @@ func videoVariantForPreset(preset api.VideoPreset) (VideoVariant, error) {
 
 func invalidVideoPresetMessage(preset api.VideoPreset) string {
 	return fmt.Sprintf("invalid preset %q; supported presets: %q, %q, %q, %q, %q", preset, api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetI2VFirst, api.VideoPresetI2VFirstTail, api.VideoPresetI2VRecamera)
+}
+
+type videoErrorDiagnosticContext struct {
+	operation string
+	preset    api.VideoPreset
+	reqKey    string
+	host      string
+	region    string
+	action    string
+	code      int
+	status    int
+	message   string
+	requestID string
+}
+
+func video50400ErrorMessage(ctx videoErrorDiagnosticContext) string {
+	return fmt.Sprintf(
+		"%s: code=%d status=%d message=%s preset=%s req_key=%s request_id=%s host=%s region=%s service=cv action=%s version=2022-08-31",
+		ctx.operation,
+		ctx.code,
+		ctx.status,
+		ctx.message,
+		ctx.preset,
+		ctx.reqKey,
+		ctx.requestID,
+		ctx.host,
+		ctx.region,
+		ctx.action,
+	)
 }

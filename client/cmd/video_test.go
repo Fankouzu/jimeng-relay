@@ -446,7 +446,7 @@ func TestVideoSubmit_BuildRequestPresetMapping(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if !strings.Contains(err.Error(), "requires exactly 2 URLs") {
+		if !strings.Contains(err.Error(), "requires exactly 2 images") {
 			t.Fatalf("expected image-count validation error, got=%v", err)
 		}
 	})
@@ -473,31 +473,38 @@ func TestVideoSubmit_FormatResponseIncludesPresetAndReqKey(t *testing.T) {
 }
 
 func TestVideoSubmit_ImageFileContract(t *testing.T) {
-	// This test covers the CLI contract for --image-file which is not yet implemented.
-	// These tests are expected to FAIL (RED phase).
+	reset := func() {
+		videoSubmitFlags = videoSubmitFlagValues{}
+	}
 
 	t.Run("accepts single --image-file for i2v-first", func(t *testing.T) {
-		rootCmd := RootCmd()
-		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first", "--prompt", "test", "--image-file", "nonexistent.png"})
-		err := rootCmd.Execute()
+		reset()
+		videoSubmitFlags.preset = "i2v-first"
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageFile = []string{"nonexistent.png"}
+		_, err := buildVideoSubmitRequest()
 		if err != nil {
 			t.Fatalf("expected success, got error: %v", err)
 		}
 	})
 
 	t.Run("accepts two --image-file for i2v-first-tail", func(t *testing.T) {
-		rootCmd := RootCmd()
-		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first-tail", "--prompt", "test", "--image-file", "f1.png", "--image-file", "f2.png"})
-		err := rootCmd.Execute()
+		reset()
+		videoSubmitFlags.preset = "i2v-first-tail"
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageFile = []string{"f1.png", "f2.png"}
+		_, err := buildVideoSubmitRequest()
 		if err != nil {
 			t.Fatalf("expected success, got error: %v", err)
 		}
 	})
 
 	t.Run("rejects wrong count for i2v-first-tail", func(t *testing.T) {
-		rootCmd := RootCmd()
-		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first-tail", "--prompt", "test", "--image-file", "f1.png"})
-		err := rootCmd.Execute()
+		reset()
+		videoSubmitFlags.preset = "i2v-first-tail"
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageFile = []string{"f1.png"}
+		_, err := buildVideoSubmitRequest()
 		if err == nil {
 			t.Fatal("expected error for wrong image count, got nil")
 		}
@@ -507,9 +514,11 @@ func TestVideoSubmit_ImageFileContract(t *testing.T) {
 	})
 
 	t.Run("rejects --image-file for t2v presets", func(t *testing.T) {
-		rootCmd := RootCmd()
-		rootCmd.SetArgs([]string{"video", "submit", "--preset", "t2v-720", "--prompt", "test", "--image-file", "f1.png"})
-		err := rootCmd.Execute()
+		reset()
+		videoSubmitFlags.preset = "t2v-720"
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageFile = []string{"f1.png"}
+		_, err := buildVideoSubmitRequest()
 		if err == nil {
 			t.Fatal("expected error for --image-file with t2v preset, got nil")
 		}
@@ -519,14 +528,90 @@ func TestVideoSubmit_ImageFileContract(t *testing.T) {
 	})
 
 	t.Run("mutual exclusivity with --image-url", func(t *testing.T) {
-		rootCmd := RootCmd()
-		rootCmd.SetArgs([]string{"video", "submit", "--preset", "i2v-first", "--prompt", "test", "--image-file", "f1.png", "--image-url", "http://example.com/i.png"})
-		err := rootCmd.Execute()
+		reset()
+		videoSubmitFlags.preset = "i2v-first"
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageFile = []string{"f1.png"}
+		videoSubmitFlags.imageURL = "http://example.com/i.png"
+		_, err := buildVideoSubmitRequest()
 		if err == nil {
 			t.Fatal("expected error for both --image-file and --image-url, got nil")
 		}
 		if !strings.Contains(err.Error(), "cannot be used together") {
 			t.Fatalf("expected mutual exclusivity error, got: %v", err)
+		}
+	})
+}
+
+func TestVideoSubmit_LegacyURLCompatibility(t *testing.T) {
+	reset := func() {
+		videoSubmitFlags = videoSubmitFlagValues{}
+	}
+
+	t.Run("legacy comma-separated two URLs for i2v-first-tail", func(t *testing.T) {
+		reset()
+		videoSubmitFlags.preset = string(api.VideoPresetI2VFirstTail)
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageURL = "http://url1.com,http://url2.com"
+
+		req, err := buildVideoSubmitRequest()
+		if err != nil {
+			t.Fatalf("expected success, got error: %v", err)
+		}
+		if len(req.ImageURLs) != 2 {
+			t.Fatalf("expected 2 URLs, got %d", len(req.ImageURLs))
+		}
+		if req.ImageURLs[0] != "http://url1.com" || req.ImageURLs[1] != "http://url2.com" {
+			t.Fatalf("URL mismatch: %v", req.ImageURLs)
+		}
+	})
+
+	t.Run("single URL for i2v-first", func(t *testing.T) {
+		reset()
+		videoSubmitFlags.preset = string(api.VideoPresetI2VFirst)
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageURL = "http://url1.com"
+
+		req, err := buildVideoSubmitRequest()
+		if err != nil {
+			t.Fatalf("expected success, got error: %v", err)
+		}
+		if len(req.ImageURLs) != 1 {
+			t.Fatalf("expected 1 URL, got %d", len(req.ImageURLs))
+		}
+		if req.ImageURLs[0] != "http://url1.com" {
+			t.Fatalf("URL mismatch: %v", req.ImageURLs)
+		}
+	})
+
+	t.Run("empty URL segment handling", func(t *testing.T) {
+		reset()
+		videoSubmitFlags.preset = string(api.VideoPresetI2VFirstTail)
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageURL = "http://url1.com, ,http://url2.com"
+
+		req, err := buildVideoSubmitRequest()
+		if err != nil {
+			t.Fatalf("expected success, got error: %v", err)
+		}
+		// parseVideoImageURLs skips empty segments
+		if len(req.ImageURLs) != 2 {
+			t.Fatalf("expected 2 URLs (empty segment skipped), got %d", len(req.ImageURLs))
+		}
+	})
+
+	t.Run("all empty segments error", func(t *testing.T) {
+		reset()
+		videoSubmitFlags.preset = string(api.VideoPresetI2VFirst)
+		videoSubmitFlags.prompt = "test"
+		videoSubmitFlags.imageURL = ", , "
+
+		_, err := buildVideoSubmitRequest()
+		if err == nil {
+			t.Fatal("expected error for all empty segments, got nil")
+		}
+		if !strings.Contains(err.Error(), "--image-url must contain at least one non-empty URL") {
+			t.Fatalf("expected specific error message, got: %v", err)
 		}
 	})
 }

@@ -152,6 +152,13 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 		if len(req.ImageURLs) != 2 {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "i2v first-tail requires exactly 2 images", nil)
 		}
+		if total := estimatedVideoInlineImageAggregateDecodedBytes(req.ImageURLs); total >= 2*maxVideoInlineImageBytes {
+			return internalerrors.New(
+				internalerrors.ErrValidationFailed,
+				fmt.Sprintf("aggregate local payload size is too large (max %d bytes after decode); upload the images to URLs or compress them before submit", 2*maxVideoInlineImageBytes),
+				nil,
+			)
+		}
 		if req.TemplateID != "" {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "template_id is not allowed for i2v first-tail", nil)
 		}
@@ -186,10 +193,27 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 	return nil
 }
 
+func estimatedVideoInlineImageAggregateDecodedBytes(imageURLs []string) int {
+	total := 0
+	for _, raw := range imageURLs {
+		trimmed := strings.TrimSpace(raw)
+		if !strings.HasPrefix(strings.ToLower(trimmed), "data:image/") {
+			continue
+		}
+		comma := strings.Index(trimmed, ",")
+		if comma < 0 {
+			continue
+		}
+		payload := stripBase64Whitespace(trimmed[comma+1:])
+		total += estimatedBase64DecodedLength(payload)
+	}
+	return total
+}
+
 func validateVideoInlineImagePayloads(imageURLs []string) error {
 	for _, raw := range imageURLs {
 		trimmed := strings.TrimSpace(raw)
-		if !strings.HasPrefix(strings.ToLower(trimmed), "data:") {
+		if !strings.HasPrefix(strings.ToLower(trimmed), "data:image/") {
 			continue
 		}
 
@@ -198,9 +222,18 @@ func validateVideoInlineImagePayloads(imageURLs []string) error {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "invalid i2v local image payload: missing data URL separator; upload the image to a URL or provide valid data:image/...;base64,...", nil)
 		}
 
+		header := strings.ToLower(strings.TrimSpace(trimmed[:comma]))
+		if !strings.Contains(header, ";base64") {
+			return internalerrors.New(internalerrors.ErrValidationFailed, "invalid i2v local image payload: expected data:image/...;base64,...; upload the image to a URL or provide valid data:image/...;base64,...", nil)
+		}
+
 		payload := stripBase64Whitespace(trimmed[comma+1:])
 		if payload == "" {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "invalid i2v local image payload: base64 content is empty; upload the image to a URL or provide valid data:image/...;base64,...", nil)
+		}
+
+		if !isStrictStdBase64(payload) {
+			return internalerrors.New(internalerrors.ErrValidationFailed, "invalid i2v local image payload: invalid base64 content; upload the image to a URL or provide valid data:image/...;base64,...", nil)
 		}
 
 		if estimatedBase64DecodedLength(payload) > maxVideoInlineImageBytes {
@@ -213,6 +246,46 @@ func validateVideoInlineImagePayloads(imageURLs []string) error {
 	}
 
 	return nil
+}
+
+func isStrictStdBase64(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	padding := 0
+	seenPad := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+			if seenPad {
+				return false
+			}
+		case c >= 'a' && c <= 'z':
+			if seenPad {
+				return false
+			}
+		case c >= '0' && c <= '9':
+			if seenPad {
+				return false
+			}
+		case c == '+' || c == '/':
+			if seenPad {
+				return false
+			}
+		case c == '=':
+			seenPad = true
+			padding++
+			if padding > 2 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 func estimatedBase64DecodedLength(payload string) int {
