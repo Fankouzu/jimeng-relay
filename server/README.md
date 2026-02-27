@@ -152,7 +152,7 @@ railway link jimeng-relay
 railway service jimeng-server
 
 # 4. SSH 进入容器并创建 Key
-railway ssh -- ./bin/jimeng-server key create --description "prod-client" --expires-at 2026-12-31T23:59:59Z
+railway ssh -- ./jimeng-server key create --description "prod-client" --expires-at 2026-12-31T23:59:59Z
 ```
 
 **方式 2: 使用 Railway Dashboard Web Terminal**
