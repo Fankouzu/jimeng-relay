@@ -136,7 +136,34 @@ go build -o ./bin/jimeng-server ./cmd/server/main.go
 
 # 轮换 key（默认 grace-period=5m）
 ./jimeng-server key rotate --id key_xxx --description "rotated" --grace-period 10m
+### Railway 环境下创建 API Key
+
+在 Railway 部署后，需要通过 Railway CLI 创建 API Key：
+
+```bash
+# 1. 登录 Railway
+railway login
+
+# 2. 链接到项目 (替换为你的项目名)
+railway link jimeng-relay
+
+# 3. 创建 API Key
+railway run -- ./bin/jimeng-server key create --description "prod-client" --expires-at 2026-12-31T23:59:59Z
 ```
+
+**输出示例**：
+```json
+{
+  "id": "key_xxxxxxxxxxxxx",
+  "access_key": "AK_xxxxxxxxxxxxx",
+  "secret_key": "SK_xxxxxxxxxxxxx",
+  "description": "prod-client",
+  "created_at": "2026-02-27T22:45:00Z",
+  "expires_at": "2026-12-31T23:59:59Z"
+}
+```
+
+> **注意**：请保存 `access_key` 和 `secret_key`，客户端需要使用它们进行 AWS SigV4 签名认证。
 
 ## 线上部署 (PostgreSQL)
 
