@@ -441,6 +441,6 @@ func init() {
 	submitCmd.Flags().BoolVar(&submitFlags.overwrite, "overwrite", false, "Overwrite existing files when downloading")
 
 	if err := submitCmd.MarkFlagRequired("prompt"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 }

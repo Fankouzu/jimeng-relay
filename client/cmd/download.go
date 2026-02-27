@@ -286,9 +286,9 @@ func init() {
 	downloadCmd.Flags().StringVar(&downloadFlags.dir, "dir", "", "Download directory")
 	downloadCmd.Flags().BoolVar(&downloadFlags.overwrite, "overwrite", false, "Overwrite existing files")
 	if err := downloadCmd.MarkFlagRequired("task-id"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 	if err := downloadCmd.MarkFlagRequired("dir"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 }

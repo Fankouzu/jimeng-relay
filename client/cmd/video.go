@@ -730,17 +730,17 @@ func init() {
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.downloadDir, "download-dir", "", "If set, download result video into this directory (implies --wait)")
 	videoSubmitCmd.Flags().BoolVar(&videoSubmitFlags.overwrite, "overwrite", false, "Overwrite existing files when downloading")
 	if err := videoSubmitCmd.MarkFlagRequired("preset"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 
 	// Video Query Flags
 	videoQueryCmd.Flags().StringVar(&videoQueryFlags.taskID, "task-id", "", "Task ID (required)")
 	videoQueryCmd.Flags().StringVar(&videoQueryFlags.preset, "preset", "", "Model preset (required)")
 	if err := videoQueryCmd.MarkFlagRequired("task-id"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 	if err := videoQueryCmd.MarkFlagRequired("preset"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 
 	// Video Wait Flags
@@ -749,10 +749,10 @@ func init() {
 	videoWaitCmd.Flags().StringVar(&videoWaitFlags.interval, "interval", "2s", "Poll interval duration, e.g. 2s")
 	videoWaitCmd.Flags().StringVar(&videoWaitFlags.timeout, "wait-timeout", "5m", "Max wait duration, e.g. 60s, 5m")
 	if err := videoWaitCmd.MarkFlagRequired("task-id"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 	if err := videoWaitCmd.MarkFlagRequired("preset"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 
 	// Video Download Flags
@@ -761,12 +761,12 @@ func init() {
 	videoDownloadCmd.Flags().StringVar(&videoDownloadFlags.dir, "dir", "", "Download directory (required)")
 	videoDownloadCmd.Flags().BoolVar(&videoDownloadFlags.overwrite, "overwrite", false, "Overwrite existing files")
 	if err := videoDownloadCmd.MarkFlagRequired("task-id"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 	if err := videoDownloadCmd.MarkFlagRequired("preset"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 	if err := videoDownloadCmd.MarkFlagRequired("dir"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 }

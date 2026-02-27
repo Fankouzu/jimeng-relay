@@ -46,6 +46,6 @@ func init() {
 
 	queryCmd.Flags().StringVar(&queryFlags.taskID, "task-id", "", "Task ID")
 	if err := queryCmd.MarkFlagRequired("task-id"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 }

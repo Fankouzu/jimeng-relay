@@ -71,6 +71,6 @@ func init() {
 	waitCmd.Flags().StringVar(&waitFlags.interval, "interval", "", "Poll interval duration, e.g. 2s")
 	waitCmd.Flags().StringVar(&waitFlags.waitTimeout, "wait-timeout", "", "Max wait duration, e.g. 60s, 5m")
 	if err := waitCmd.MarkFlagRequired("task-id"); err != nil {
-		panic(err)
+		cobra.CheckErr(err)
 	}
 }
