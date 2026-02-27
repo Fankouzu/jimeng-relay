@@ -11,6 +11,12 @@
   <sub>统一鉴权 · 审计追踪 · 并发控制 · 幂等支持</sub>
 </p>
 
+<p align="center">
+  <a href="https://railway.app/template/jimeng-relay" target="_blank">
+    <img src="https://railway.app/button.svg" alt="Deploy on Railway">
+  </a>
+</p>
+
 ---
 
 ## 📖 项目简介
