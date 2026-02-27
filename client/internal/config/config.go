@@ -48,6 +48,7 @@ type Options struct {
 	SecretKey  *string
 	Region     *string
 	Host       *string
+	Scheme     *string
 	Timeout    *time.Duration
 	ConfigFile *string
 	Debug      bool
@@ -71,10 +72,10 @@ func Load(opts Options) (Config, error) {
 		cfg.Region = v
 	}
 	if v, ok := lookupEnvNonEmpty(EnvHost); ok {
-		cfg.Host = v
+		cfg.Host = normalizeHost(v)
 	}
-	if v, ok := lookupEnvNonEmpty(EnvScheme); ok {
-		cfg.Scheme = v
+	if v, ok := os.LookupEnv(EnvScheme); ok {
+		cfg.Scheme = strings.TrimSpace(v)
 	}
 	if v, ok := lookupEnvNonEmpty(EnvTimeout); ok {
 		d, err := time.ParseDuration(v)
@@ -95,13 +96,23 @@ func Load(opts Options) (Config, error) {
 		if v == "" {
 			return Config{}, fmt.Errorf("host must not be empty")
 		}
-		cfg.Host = v
+		cfg.Host = normalizeHost(v)
+	}
+	if opts.Scheme != nil {
+		v := strings.TrimSpace(*opts.Scheme)
+		if v == "" {
+			return Config{}, fmt.Errorf("scheme must not be empty")
+		}
+		cfg.Scheme = v
 	}
 	if opts.Timeout != nil {
 		if *opts.Timeout <= 0 {
 			return Config{}, fmt.Errorf("timeout must be positive")
 		}
 		cfg.Timeout = *opts.Timeout
+	}
+	if err := validateScheme(cfg.Scheme); err != nil {
+		return Config{}, err
 	}
 	creds, err := LoadCredentials(CredentialsOptions{
 		AccessKey: opts.AccessKey,
@@ -113,6 +124,20 @@ func Load(opts Options) (Config, error) {
 	cfg.Credentials = creds
 	cfg.Debug = opts.Debug
 	return cfg, nil
+}
+
+func normalizeHost(host string) string {
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimRight(host, "/")
+	return host
+}
+
+func validateScheme(scheme string) error {
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("invalid %s: %q (must be http or https)", EnvScheme, scheme)
+	}
+	return nil
 }
 
 func lookupEnvNonEmpty(key string) (string, bool) {

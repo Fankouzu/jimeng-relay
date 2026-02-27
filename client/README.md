@@ -25,7 +25,12 @@ cp ./bin/jimeng /usr/local/bin/jimeng
 
 ## 2. 配置方式
 
-支持三种来源，优先级如下：
+支持三种来源，配置优先级如下：
+
+1. 命令行 flag（最高）
+2. 系统环境变量 (Environment Variables)
+3. `.env` 文件（`client/.env`）
+4. 默认值 (Default)
 
 1. 命令行 flag（最高）
 2. 系统环境变量
@@ -180,7 +185,12 @@ jimeng download --task-id <task_id> --dir ./outputs --overwrite --format json
 示例：
 
 ```bash
-# 文生视频
+# 文生视频 (指定协议与 Host)
+VOLC_SCHEME=https VOLC_HOST=visual.volcengineapi.com jimeng video submit \
+  --preset t2v-720 \
+  --prompt "一只在森林中奔跑的小狗" \
+  --aspect-ratio 16:9 \
+  --format json
 jimeng video submit \
   --preset t2v-720 \
   --prompt "一只在森林中奔跑的小狗" \

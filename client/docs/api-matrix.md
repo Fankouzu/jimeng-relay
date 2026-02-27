@@ -6,6 +6,23 @@
 - API 动作仅允许：`CVSync2AsyncSubmitTask`、`CVSync2AsyncGetResult`。
 - 不纳入 `CVProcess` / `GetTaskResult` 主路径。
 
+## 配置与环境变量 (Configuration)
+
+| 变量名 | 说明 | 默认值 | 优先级 |
+| --- | --- | --- | --- |
+| `VOLC_ACCESSKEY` | 火山引擎 AK | - | 1 |
+| `VOLC_SECRETKEY` | 火山引擎 SK | - | 1 |
+| `VOLC_REGION` | 区域 | `cn-north-1` | 1 |
+| `VOLC_HOST` | API Host | `visual.volcengineapi.com` | 1 |
+| `VOLC_SCHEME` | 协议 (http/https) | `https` | 1 |
+| `VOLC_TIMEOUT` | 请求超时 | `30s` | 1 |
+
+**优先级说明**：
+1. 命令行 flag (最高)
+2. 系统环境变量
+3. `.env` 文件
+4. 默认值
+
 ## 全局调用约定
 
 - Endpoint: `https://visual.volcengineapi.com`

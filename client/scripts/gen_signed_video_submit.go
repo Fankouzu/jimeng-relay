@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/volcengine/volc-sdk-golang/base"
 )
@@ -29,10 +30,17 @@ func mustEnv(key string) string {
 func main() {
 	ak := mustEnv("VOLC_ACCESSKEY")
 	sk := mustEnv("VOLC_SECRETKEY")
+	scheme := os.Getenv("VOLC_SCHEME")
+	if scheme == "" {
+		scheme = "https"
+	}
 	host := os.Getenv("VOLC_HOST")
 	if host == "" {
 		host = "visual.volcengineapi.com"
 	}
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimSuffix(host, "/")
 	region := os.Getenv("VOLC_REGION")
 	if region == "" {
 		region = "cn-north-1"
@@ -55,7 +63,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	u := fmt.Sprintf("https://%s/?Action=CVSync2AsyncSubmitTask&Version=2022-08-31", host)
+	u := fmt.Sprintf("%s://%s/?Action=CVSync2AsyncSubmitTask&Version=2022-08-31", scheme, host)
 	req, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(bodyBytes))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "new request: %v\n", err)

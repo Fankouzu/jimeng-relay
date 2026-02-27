@@ -19,6 +19,7 @@ type rootFlagValues struct {
 	secretKey string
 	region    string
 	host      string
+	scheme    string
 	timeout   string
 	debug     bool
 }
@@ -51,6 +52,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootFlags.secretKey, "secret-key", "", fmt.Sprintf("Volcengine secret key (overrides %s)", config.EnvSecretKey))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.region, "region", "", fmt.Sprintf("Volcengine region (overrides %s)", config.EnvRegion))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.host, "host", "", fmt.Sprintf("Volcengine API host (overrides %s)", config.EnvHost))
+	rootCmd.PersistentFlags().StringVar(&rootFlags.scheme, "scheme", "", fmt.Sprintf("Volcengine API scheme (overrides %s)", config.EnvScheme))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.timeout, "timeout", "", fmt.Sprintf("API request timeout duration, e.g. 30s, 2m (overrides %s)", config.EnvTimeout))
 	rootCmd.PersistentFlags().BoolVar(&rootFlags.debug, "debug", false, "Enable debug logging")
 }
@@ -98,6 +100,9 @@ func loadConfigFromRootFlags(cmd *cobra.Command) (config.Config, error) {
 	}
 	if flagChanged(cmd, "host") {
 		opts.Host = &rootFlags.host
+	}
+	if flagChanged(cmd, "scheme") {
+		opts.Scheme = &rootFlags.scheme
 	}
 	if flagChanged(cmd, "timeout") {
 		raw := strings.TrimSpace(rootFlags.timeout)
