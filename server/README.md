@@ -138,18 +138,34 @@ go build -o ./bin/jimeng-server ./cmd/server/main.go
 ./jimeng-server key rotate --id key_xxx --description "rotated" --grace-period 10m
 ### Railway 环境下创建 API Key
 
-在 Railway 部署后，需要通过 Railway CLI 创建 API Key：
+在 Railway 部署后，需要在 Railway 容器中创建 API Key（因为需要访问私有网络中的 PostgreSQL）：
 
+**方式 1: 使用 Railway CLI SSH**
 ```bash
 # 1. 登录 Railway
 railway login
 
-# 2. 链接到项目 (替换为你的项目名)
+# 2. 链接到项目
 railway link jimeng-relay
 
-# 3. 创建 API Key
-railway run -- ./bin/jimeng-server key create --description "prod-client" --expires-at 2026-12-31T23:59:59Z
+# 3. 选择服务
+railway service jimeng-server
+
+# 4. SSH 进入容器并创建 Key
+railway ssh -- ./bin/jimeng-server key create --description "prod-client" --expires-at 2026-12-31T23:59:59Z
 ```
+
+**方式 2: 使用 Railway Dashboard Web Terminal**
+
+1. 打开 Railway Dashboard
+2. 进入 `jimeng-relay` 项目 → `jimeng-server` 服务
+3. 点击右上角 **"Connect"** 或 **"Terminal"**
+4. 在 Web Terminal 中执行：
+   ```bash
+   ./bin/jimeng-server key create --description "prod-client" --expires-at 2026-12-31T23:59:59Z
+   ```
+
+> **注意**：必须使用 `railway ssh` 或 Dashboard Terminal，不能使用 `railway run`，因为后者在本地执行，无法访问 Railway 私有网络中的 PostgreSQL。
 
 **输出示例**：
 ```json
@@ -163,8 +179,7 @@ railway run -- ./bin/jimeng-server key create --description "prod-client" --expi
 }
 ```
 
-> **注意**：请保存 `access_key` 和 `secret_key`，客户端需要使用它们进行 AWS SigV4 签名认证。
-
+> **重要**：请保存 `access_key` 和 `secret_key`，客户端需要使用它们进行 AWS SigV4 签名认证。
 ## 线上部署 (PostgreSQL)
 
 1. **数据库准备**：准备一个 PostgreSQL 实例。
