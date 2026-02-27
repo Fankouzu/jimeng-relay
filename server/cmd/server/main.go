@@ -119,9 +119,8 @@ func runServer() error {
 
 	// Health endpoints (no auth required)
 	healthHandler := health.NewHandler(nil)
-	healthRoutes := healthHandler.Routes()
-	mux.Handle("/health", healthRoutes)
-	mux.Handle("/ready", healthRoutes)
+	mux.HandleFunc("/health", healthHandler.Health)
+	mux.HandleFunc("/ready", healthHandler.Ready)
 
 	mux.Handle("/", observability.RecoverMiddleware(logger)(obs(authn(app))))
 
