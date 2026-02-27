@@ -37,7 +37,11 @@ const (
 	DefaultUpstreamMaxQueue          = 100
 	DefaultUpstreamSubmitMinInterval = 0 * time.Second
 	DefaultPerKeyMaxConcurrent       = 1
-	DefaultPerKeyMaxQueue            = 1
+	// DefaultPerKeyMaxQueue is intentionally 0.
+	//
+	// Policy A: same-key concurrent submit must immediately return 429, with no per-key waiting queue.
+	// PER_KEY_MAX_QUEUE is kept as a reserved knob for future use; currently any non-zero value is rejected.
+	DefaultPerKeyMaxQueue = 0
 )
 
 type Config struct {
@@ -172,6 +176,15 @@ func Load(opts Options) (Config, error) {
 			return Config{}, fmt.Errorf("invalid %s: %w", EnvPerKeyMaxQueue, err)
 		}
 		cfg.PerKeyMaxQueue = n
+	}
+
+	// Per-key concurrency semantics are intentionally fixed to preserve Policy A.
+	// Keep these env vars for forward-compatibility, but reject unsupported values to avoid silent misconfiguration.
+	if cfg.PerKeyMaxConcurrent != DefaultPerKeyMaxConcurrent {
+		return Config{}, fmt.Errorf("%s is reserved; policy is fixed to %d (got %d)", EnvPerKeyMaxConcurrent, DefaultPerKeyMaxConcurrent, cfg.PerKeyMaxConcurrent)
+	}
+	if cfg.PerKeyMaxQueue != DefaultPerKeyMaxQueue {
+		return Config{}, fmt.Errorf("%s is reserved; policy is fixed to %d (got %d)", EnvPerKeyMaxQueue, DefaultPerKeyMaxQueue, cfg.PerKeyMaxQueue)
 	}
 
 	if opts.Region != nil {

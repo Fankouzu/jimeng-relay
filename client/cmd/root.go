@@ -10,6 +10,7 @@ import (
 	"github.com/jimeng-relay/client/internal/jimeng"
 	"github.com/jimeng-relay/client/internal/output"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type rootFlagValues struct {
@@ -33,6 +34,7 @@ var rootCmd = &cobra.Command{
 }
 
 func RootCmd() *cobra.Command {
+	resetCommandTree(rootCmd)
 	return rootCmd
 }
 
@@ -131,4 +133,27 @@ func newClientAndFormatter(cmd *cobra.Command) (*jimeng.Client, *output.Formatte
 	}
 
 	return client, formatter, nil
+}
+
+func resetCommandTree(cmd *cobra.Command) {
+	if cmd == nil {
+		return
+	}
+	resetFlagSet(cmd.Flags())
+	resetFlagSet(cmd.PersistentFlags())
+	for _, c := range cmd.Commands() {
+		resetCommandTree(c)
+	}
+}
+
+func resetFlagSet(fs *pflag.FlagSet) {
+	if fs == nil {
+		return
+	}
+	fs.VisitAll(func(f *pflag.Flag) {
+		if f.Name == "help" {
+			_ = f.Value.Set("false")
+		}
+		f.Changed = false
+	})
 }

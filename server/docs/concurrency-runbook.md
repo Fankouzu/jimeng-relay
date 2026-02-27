@@ -8,6 +8,8 @@ Jimeng Relay 采用两层并发控制：
 1. **Key 级并发 (Per-Key Concurrency)**: 每个 API Key 同时只能有一个活跃请求。由 `KeyManager` 在内存中维护 `inUse` 状态。
 2. **全局并发 (Global Concurrency)**: 限制转发到上游的总并发数。由 `upstream.Client` 使用信号量 (Semaphore) 和等待队列 (Queue) 实现。
 
+> 说明：Per-Key 策略目前为固定策略（Policy A）：同 Key 并发立即 429、无 Per-Key 等待队列。`PER_KEY_MAX_CONCURRENT`/`PER_KEY_MAX_QUEUE` 仅为前向兼容保留，当前只允许取值 `1`/`0`。
+
 ## 2. 诊断工具箱 (Diagnostic Toolkit)
 
 ### 2.1 观察运行时日志
@@ -90,7 +92,7 @@ go run ./scripts/local_e2e_concurrency.go
 
 | 目的 | 命令 |
 | :--- | :--- |
-| **查看当前配置** | `grep -E "UPSTREAM|VOLC" .env` |
+| **查看当前配置** | `grep -E "UPSTREAM|VOLC|PER_KEY" .env` |
 | **强制重置状态** | `systemctl restart jimeng-relay` (或对应容器重启命令) |
 | **查看实时错误日志** | `tail -f server.log | grep -E "level=ERROR|level=WARN"` |
 | **统计错误分布** | `grep "upstream_status" server.log | awk '{print $NF}' | sort | uniq -c` |

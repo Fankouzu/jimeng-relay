@@ -1583,7 +1583,7 @@ func TestClient_UpstreamParity(t *testing.T) {
 		{
 			name: "t2v-720",
 			reqBody: map[string]any{
-				"req_key":    "jimeng_t2v_v30_720p",
+				"req_key":    "jimeng_t2v_v30",
 				"prompt":     "a beautiful cat",
 				"resolution": "1280x720",
 			},

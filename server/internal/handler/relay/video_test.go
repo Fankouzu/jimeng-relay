@@ -22,11 +22,13 @@ import (
 	"github.com/jimeng-relay/server/internal/relay/upstream"
 	auditservice "github.com/jimeng-relay/server/internal/service/audit"
 	"github.com/jimeng-relay/server/internal/service/keymanager"
+	"github.com/jimeng-relay/server/internal/testharness"
 )
 
 const (
 	videoSubmitReqKey    = "jimeng_video_v30"
 	videoGetResultReqKey = "jimeng_video_query_v30"
+	videoProReqKey       = "jimeng_ti2v_v30_pro"
 )
 
 func TestSubmitVideoReqKeyPassthrough(t *testing.T) {
@@ -38,41 +40,46 @@ func TestSubmitVideoReqKeyPassthrough(t *testing.T) {
 		{name: "compatible action route", path: "/?Action=CVSync2AsyncSubmitTask&Version=2022-08-31"},
 	}
 
+	reqKeys := []string{videoSubmitReqKey, videoProReqKey}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			upstreamBody := []byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`)
-			fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
-			auditSvc, dsRepo, usRepo, aeRepo := newTestAuditService(t, nil, nil, nil)
-			h := NewSubmitHandler(fake, auditSvc, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
+			for _, reqKey := range reqKeys {
+				t.Run("req_key="+reqKey, func(t *testing.T) {
+					upstreamBody := []byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`)
+					fake := &fakeSubmitClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
+					auditSvc, dsRepo, usRepo, aeRepo := newTestAuditService(t, nil, nil, nil)
+					h := NewSubmitHandler(fake, auditSvc, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
 
-			requestBody := []byte(`{"prompt":"video test","req_key":"` + videoSubmitReqKey + `"}`)
-			req := httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(requestBody))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Request-Id", "video-submit-req-1")
-			req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k-video"))
-			rec := httptest.NewRecorder()
+					requestBody := []byte(`{"prompt":"video test","req_key":"` + reqKey + `"}`)
+					req := httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(requestBody))
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("X-Request-Id", "video-submit-req-1")
+					req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k-video"))
+					rec := httptest.NewRecorder()
 
-			h.ServeHTTP(rec, req)
+					h.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusOK {
-				t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+					if rec.Code != http.StatusOK {
+						t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+					}
+					if !bytes.Equal(fake.reqBody, requestBody) {
+						t.Fatalf("expected video request body passthrough to upstream")
+					}
+					if fake.calls != 1 {
+						t.Fatalf("expected 1 upstream call, got %d", fake.calls)
+					}
+					if len(dsRepo.created) != 1 || len(usRepo.created) != 1 || len(aeRepo.created) != 1 {
+						t.Fatalf("expected full audit chain writes, got downstream=%d upstream=%d events=%d", len(dsRepo.created), len(usRepo.created), len(aeRepo.created))
+					}
+					if dsRepo.created[0].Action != models.DownstreamActionCVSync2AsyncSubmitTask {
+						t.Fatalf("expected submit action in audit, got %q", dsRepo.created[0].Action)
+					}
+					if got, ok := dsRepo.created[0].Body["req_key"].(string); !ok || got != reqKey {
+						t.Fatalf("expected audited req_key %q, got %#v", reqKey, dsRepo.created[0].Body["req_key"])
+					}
+				})
 			}
-			if !bytes.Equal(fake.reqBody, requestBody) {
-				t.Fatalf("expected video request body passthrough to upstream")
-			}
-			if fake.calls != 1 {
-				t.Fatalf("expected 1 upstream call, got %d", fake.calls)
-			}
-			if len(dsRepo.created) != 1 || len(usRepo.created) != 1 || len(aeRepo.created) != 1 {
-				t.Fatalf("expected full audit chain writes, got downstream=%d upstream=%d events=%d", len(dsRepo.created), len(usRepo.created), len(aeRepo.created))
-			}
-			if dsRepo.created[0].Action != models.DownstreamActionCVSync2AsyncSubmitTask {
-				t.Fatalf("expected submit action in audit, got %q", dsRepo.created[0].Action)
-			}
-			if got, ok := dsRepo.created[0].Body["req_key"].(string); !ok || got != videoSubmitReqKey {
-				t.Fatalf("expected audited req_key %q, got %#v", videoSubmitReqKey, dsRepo.created[0].Body["req_key"])
-			}
-
 		})
 	}
 }
@@ -86,41 +93,46 @@ func TestGetResultVideoReqKeyPassthrough(t *testing.T) {
 		{name: "compatible action route", path: "/?Action=CVSync2AsyncGetResult&Version=2022-08-31"},
 	}
 
+	reqKeys := []string{videoGetResultReqKey, videoProReqKey}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			upstreamBody := []byte(`{"code":10000,"message":"ok","data":{"status":"running"}}`)
-			fake := &fakeGetResultClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
-			auditSvc, dsRepo, usRepo, aeRepo := newTestAuditService(t, nil, nil, nil)
-			h := NewGetResultHandler(fake, auditSvc, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
+			for _, reqKey := range reqKeys {
+				t.Run("req_key="+reqKey, func(t *testing.T) {
+					upstreamBody := []byte(`{"code":10000,"message":"ok","data":{"status":"running"}}`)
+					fake := &fakeGetResultClient{resp: &upstream.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: upstreamBody}}
+					auditSvc, dsRepo, usRepo, aeRepo := newTestAuditService(t, nil, nil, nil)
+					h := NewGetResultHandler(fake, auditSvc, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
 
-			requestBody := []byte(`{"task_id":"video_task_1","req_key":"` + videoGetResultReqKey + `"}`)
-			req := httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(requestBody))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Request-Id", "video-get-result-req-1")
-			req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k-video"))
-			rec := httptest.NewRecorder()
+					requestBody := []byte(`{"task_id":"video_task_1","req_key":"` + reqKey + `"}`)
+					req := httptest.NewRequest(http.MethodPost, tt.path, bytes.NewReader(requestBody))
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("X-Request-Id", "video-get-result-req-1")
+					req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k-video"))
+					rec := httptest.NewRecorder()
 
-			h.ServeHTTP(rec, req)
+					h.ServeHTTP(rec, req)
 
-			if rec.Code != http.StatusOK {
-				t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+					if rec.Code != http.StatusOK {
+						t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+					}
+					if !bytes.Equal(fake.reqBody, requestBody) {
+						t.Fatalf("expected video get-result body passthrough to upstream")
+					}
+					if fake.calls != 1 {
+						t.Fatalf("expected 1 upstream call, got %d", fake.calls)
+					}
+					if len(dsRepo.created) != 1 || len(usRepo.created) != 1 || len(aeRepo.created) != 1 {
+						t.Fatalf("expected full audit chain writes, got downstream=%d upstream=%d events=%d", len(dsRepo.created), len(usRepo.created), len(aeRepo.created))
+					}
+					if dsRepo.created[0].Action != models.DownstreamActionCVSync2AsyncGetResult {
+						t.Fatalf("expected get-result action in audit, got %q", dsRepo.created[0].Action)
+					}
+					if got, ok := dsRepo.created[0].Body["req_key"].(string); !ok || got != reqKey {
+						t.Fatalf("expected audited req_key %q, got %#v", reqKey, dsRepo.created[0].Body["req_key"])
+					}
+				})
 			}
-			if !bytes.Equal(fake.reqBody, requestBody) {
-				t.Fatalf("expected video get-result body passthrough to upstream")
-			}
-			if fake.calls != 1 {
-				t.Fatalf("expected 1 upstream call, got %d", fake.calls)
-			}
-			if len(dsRepo.created) != 1 || len(usRepo.created) != 1 || len(aeRepo.created) != 1 {
-				t.Fatalf("expected full audit chain writes, got downstream=%d upstream=%d events=%d", len(dsRepo.created), len(usRepo.created), len(aeRepo.created))
-			}
-			if dsRepo.created[0].Action != models.DownstreamActionCVSync2AsyncGetResult {
-				t.Fatalf("expected get-result action in audit, got %q", dsRepo.created[0].Action)
-			}
-			if got, ok := dsRepo.created[0].Body["req_key"].(string); !ok || got != videoGetResultReqKey {
-				t.Fatalf("expected audited req_key %q, got %#v", videoGetResultReqKey, dsRepo.created[0].Body["req_key"])
-			}
-
 		})
 	}
 }
@@ -419,6 +431,176 @@ func TestRateLimitVideo_GlobalQueueFullSubmitReturns429(t *testing.T) {
 	}
 }
 
+func TestConcurrencyPolicy_SameKeyImmediate429(t *testing.T) {
+	gate := testharness.NewBlockingGate()
+	mockUpstream := testharness.NewMockUpstreamServer([]testharness.MockHTTPResponse{{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       []byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`),
+	}}, gate)
+	defer mockUpstream.Close()
+
+	c, err := upstream.NewClient(config.Config{
+		Credentials: config.Credentials{AccessKey: "ak", SecretKey: "sk"},
+		Region:      "cn-north-1",
+		Host:        mockUpstream.URL(),
+		Timeout:     2 * time.Second,
+	}, upstream.Options{
+		MaxConcurrent: 2,
+		MaxQueue:      10,
+		KeyManager:    keymanager.NewService(nil),
+	})
+	if err != nil {
+		t.Fatalf("upstream.NewClient: %v", err)
+	}
+
+	h := NewSubmitHandler(c, newConcurrentTestAuditService(t), nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
+	body := []byte(`{"prompt":"video test","req_key":"` + videoSubmitReqKey + `"}`)
+
+	firstDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Request-Id", "policy-same-key-1")
+		req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, "k-policy"))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		firstDone <- rec
+	}()
+
+	select {
+	case <-mockUpstream.Started():
+	case <-time.After(2 * time.Second):
+		t.Fatalf("first request did not reach upstream in time")
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/v1/submit", bytes.NewReader(body))
+	secondReq.Header.Set("Content-Type", "application/json")
+	secondReq.Header.Set("X-Request-Id", "policy-same-key-2")
+	secondReq = secondReq.WithContext(context.WithValue(secondReq.Context(), sigv4.ContextAPIKeyID, "k-policy"))
+	secondRec := httptest.NewRecorder()
+
+	start := time.Now()
+	h.ServeHTTP(secondRec, secondReq)
+	elapsed := time.Since(start)
+
+	if secondRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d body=%s", secondRec.Code, secondRec.Body.String())
+	}
+	if elapsed >= 100*time.Millisecond {
+		t.Fatalf("expected immediate same-key rejection (<100ms), got %s", elapsed)
+	}
+	if got := mockUpstream.CallCount(); got != 1 {
+		t.Fatalf("expected only 1 upstream call for same-key concurrency, got %d", got)
+	}
+
+	gate.Release()
+	select {
+	case rec := <-firstDone:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected first status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("first request did not complete after releasing upstream")
+	}
+}
+
+func TestConcurrencyPolicy_DifferentKeyFIFO(t *testing.T) {
+	gate := testharness.NewBlockingGate()
+	mockUpstream := testharness.NewMockUpstreamServer([]testharness.MockHTTPResponse{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       []byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_1"}}`),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       []byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_2"}}`),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       []byte(`{"code":10000,"message":"ok","data":{"task_id":"video_task_3"}}`),
+		},
+	}, gate)
+	defer mockUpstream.Close()
+
+	c, err := upstream.NewClient(config.Config{
+		Credentials: config.Credentials{AccessKey: "ak", SecretKey: "sk"},
+		Region:      "cn-north-1",
+		Host:        mockUpstream.URL(),
+		Timeout:     2 * time.Second,
+	}, upstream.Options{
+		MaxConcurrent: 1,
+		MaxQueue:      2,
+		KeyManager:    keymanager.NewService(nil),
+	})
+	if err != nil {
+		t.Fatalf("upstream.NewClient: %v", err)
+	}
+
+	h := NewSubmitHandler(c, newConcurrentTestAuditService(t), nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
+	body := []byte(`{"prompt":"video test","req_key":"` + videoSubmitReqKey + `"}`)
+
+	firstDone := make(chan *httptest.ResponseRecorder, 1)
+	go serveVideoSubmitRequest(h, body, "k-fifo-a", "policy-fifo-1", "/v1/submit", firstDone)
+
+	select {
+	case <-mockUpstream.Started():
+	case <-time.After(2 * time.Second):
+		t.Fatalf("first request did not reach upstream in time")
+	}
+
+	secondDone := make(chan *httptest.ResponseRecorder, 1)
+	go serveVideoSubmitRequest(h, body, "k-fifo-b", "policy-fifo-2", "/v1/submit", secondDone)
+	waitForUpstreamWaitersLen(t, c, 1)
+
+	thirdDone := make(chan *httptest.ResponseRecorder, 1)
+	go serveVideoSubmitRequest(h, body, "k-fifo-c", "policy-fifo-3", "/v1/submit", thirdDone)
+	waitForUpstreamWaitersLen(t, c, 2)
+
+	gate.Release()
+
+	select {
+	case rec := <-firstDone:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected first status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("first request did not complete after releasing upstream")
+	}
+
+	var secondTaskID string
+	select {
+	case rec := <-secondDone:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected second status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		secondTaskID = mustReadTaskID(t, rec)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("second request did not complete after releasing upstream")
+	}
+
+	var thirdTaskID string
+	select {
+	case rec := <-thirdDone:
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected third status 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		thirdTaskID = mustReadTaskID(t, rec)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("third request did not complete after releasing upstream")
+	}
+
+	testharness.AssertFIFOOrder(t, []testharness.Response{{ID: secondTaskID}, {ID: thirdTaskID}}, []string{"video_task_2", "video_task_3"})
+	testharness.AssertMaxInFlight(t, c, 1)
+
+	if got := mockUpstream.CallCount(); got != 3 {
+		t.Fatalf("expected 3 upstream calls total in fifo flow, got %d", got)
+	}
+}
+
 func TestVideoValidationErrors(t *testing.T) {
 	t.Run("submit validation failed -> 400 with validation code", func(t *testing.T) {
 		fake := &fakeSubmitClient{err: internalerrors.New(internalerrors.ErrValidationFailed, "req_key mismatch: expected jimeng_video_v30", nil)}
@@ -505,6 +687,32 @@ func waitForUpstreamWaitersLen(t *testing.T, c *upstream.Client, want int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("waiters length did not reach %d, got %d", want, upstreamWaitersLen(c))
+}
+
+func serveVideoSubmitRequest(h http.Handler, body []byte, apiKeyID string, requestID string, path string, done chan<- *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-Id", requestID)
+	req = req.WithContext(context.WithValue(req.Context(), sigv4.ContextAPIKeyID, apiKeyID))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	done <- rec
+}
+
+func mustReadTaskID(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var payload struct {
+		Data struct {
+			TaskID string `json:"task_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal response: %v", err)
+	}
+	if payload.Data.TaskID == "" {
+		t.Fatalf("expected non-empty task_id in response body=%s", rec.Body.String())
+	}
+	return payload.Data.TaskID
 }
 
 type lockedReader struct {

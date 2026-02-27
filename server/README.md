@@ -28,6 +28,8 @@ Jimeng Relay Server 是一个高性能的即梦 4.0 API 中继服务，旨在为
 | `UPSTREAM_MAX_CONCURRENT` | 否 | `1` | 上游并发请求上限 |
 | `UPSTREAM_MAX_QUEUE` | 否 | `100` | 上游排队队列大小 |
 | `UPSTREAM_SUBMIT_MIN_INTERVAL` | 否 | `0s` | 两次 submit 请求之间的最小间隔（建议按上游限流逐步调大） |
+| `PER_KEY_MAX_CONCURRENT` | 否 | `1` | 单 Key 并发上限（当前为固定策略：只能为 1；其他值将启动失败） |
+| `PER_KEY_MAX_QUEUE` | 否 | `0` | 单 Key 排队上限（当前为固定策略：只能为 0；其他值将启动失败） |
 
 > **注意**：`API_KEY_ENCRYPTION_KEY` 必须是 32 字节原始密钥的 Base64 编码字符串。可以使用以下命令生成：
 > `openssl rand -base64 32`
@@ -162,4 +164,3 @@ go build -o ./bin/jimeng-server ./cmd/server/main.go
 3. **核对 ReqKey**：视频生成对不同预设（Preset）有严格的 `req_key` 要求，请参考客户端文档中的 API 矩阵。
 4. **查看诊断字段**：Relay 返回的错误消息中包含完整的诊断上下文（Host, Region, Action, RequestID），请将其提供给技术支持。
 5. **资源可用性**：检查图片 URL 是否可公开访问，或 Base64 编码是否完整。
-

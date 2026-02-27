@@ -17,6 +17,11 @@ func TestLoad(t *testing.T) {
 		os.Unsetenv(EnvDatabaseType)
 		os.Unsetenv(EnvDatabaseURL)
 		os.Unsetenv(EnvAPIKeyEncryptionKey)
+		os.Unsetenv(EnvUpstreamMaxConcurrent)
+		os.Unsetenv(EnvUpstreamMaxQueue)
+		os.Unsetenv(EnvUpstreamSubmitMinInterval)
+		os.Unsetenv(EnvPerKeyMaxConcurrent)
+		os.Unsetenv(EnvPerKeyMaxQueue)
 	}
 
 	t.Run("DefaultValues", func(t *testing.T) {
@@ -48,6 +53,46 @@ func TestLoad(t *testing.T) {
 		}
 		if cfg.DatabaseURL != DefaultDatabaseURL {
 			t.Errorf("expected database URL %s, got %s", DefaultDatabaseURL, cfg.DatabaseURL)
+		}
+		if cfg.PerKeyMaxConcurrent != DefaultPerKeyMaxConcurrent {
+			t.Errorf("expected per key max concurrent %d, got %d", DefaultPerKeyMaxConcurrent, cfg.PerKeyMaxConcurrent)
+		}
+		if cfg.PerKeyMaxQueue != DefaultPerKeyMaxQueue {
+			t.Errorf("expected per key max queue %d, got %d", DefaultPerKeyMaxQueue, cfg.PerKeyMaxQueue)
+		}
+	})
+
+	t.Run("ReservedPerKeyPolicy", func(t *testing.T) {
+		clearEnv()
+		os.Setenv(EnvAccessKey, "ak")
+		os.Setenv(EnvSecretKey, "sk")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+		defer clearEnv()
+
+		os.Setenv(EnvPerKeyMaxConcurrent, "2")
+		os.Setenv(EnvPerKeyMaxQueue, "0")
+		if _, err := Load(Options{}); err == nil {
+			t.Fatalf("expected error for %s=2, got nil", EnvPerKeyMaxConcurrent)
+		}
+
+		clearEnv()
+		os.Setenv(EnvAccessKey, "ak")
+		os.Setenv(EnvSecretKey, "sk")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+		os.Setenv(EnvPerKeyMaxConcurrent, "1")
+		os.Setenv(EnvPerKeyMaxQueue, "1")
+		if _, err := Load(Options{}); err == nil {
+			t.Fatalf("expected error for %s=1, got nil", EnvPerKeyMaxQueue)
+		}
+
+		clearEnv()
+		os.Setenv(EnvAccessKey, "ak")
+		os.Setenv(EnvSecretKey, "sk")
+		os.Setenv(EnvAPIKeyEncryptionKey, "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+		os.Setenv(EnvPerKeyMaxConcurrent, "1")
+		os.Setenv(EnvPerKeyMaxQueue, "0")
+		if _, err := Load(Options{}); err != nil {
+			t.Fatalf("expected no error for per-key policy defaults, got %v", err)
 		}
 	})
 

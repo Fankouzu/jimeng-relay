@@ -48,6 +48,20 @@ func TestKeyManager_AcquireKey(t *testing.T) {
 			t.Errorf("expected ErrRateLimited, got %v", err)
 		}
 	})
+
+	t.Run("PolicyA_IgnoresPerKeyEnvKnobs", func(t *testing.T) {
+		t.Setenv("PER_KEY_MAX_CONCURRENT", "1")
+		t.Setenv("PER_KEY_MAX_QUEUE", "123")
+
+		_, err := svc.AcquireKey(ctx, "key_env", "req_env_1")
+		if err != nil {
+			t.Fatalf("first acquire failed: %v", err)
+		}
+		_, err = svc.AcquireKey(ctx, "key_env", "req_env_2")
+		if errors.GetCode(err) != errors.ErrRateLimited {
+			t.Fatalf("expected ErrRateLimited, got %v", err)
+		}
+	})
 }
 
 func TestKeyManager_Release(t *testing.T) {

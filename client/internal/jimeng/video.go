@@ -411,9 +411,9 @@ func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) 
 
 func videoVariantForPreset(preset api.VideoPreset) (VideoVariant, error) {
 	switch preset {
-	case api.VideoPresetT2V720, api.VideoPresetT2V1080:
+	case api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetT2VPro:
 		return VideoVariantT2V, nil
-	case api.VideoPresetI2VFirst:
+	case api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro:
 		return VideoVariantI2VFirstFrame, nil
 	case api.VideoPresetI2VFirstTail:
 		return VideoVariantI2VFirstTail, nil

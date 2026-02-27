@@ -154,10 +154,12 @@ jimeng download --task-id <task_id> --dir ./outputs --overwrite --format json
 
 | 预设名 | 说明 | 对应 ReqKey |
 | :--- | :--- | :--- |
-| `t2v-720` | 文生视频 720p | `jimeng_t2v_v30_720p` |
+| `t2v-720` | 文生视频 720p | `jimeng_t2v_v30` |
 | `t2v-1080` | 文生视频 1080p | `jimeng_t2v_v30_1080p` |
+| `t2v-pro` | 文生视频 3.0 Pro | `jimeng_ti2v_v30_pro` |
 | `i2v-first` | 图生视频 (首帧) | `jimeng_i2v_first_v30_1080` |
 | `i2v-first-tail` | 图生视频 (首尾帧) | `jimeng_i2v_first_tail_v30_1080` |
+| `i2v-first-pro` | 图生视频 3.0 Pro (首帧) | `jimeng_ti2v_v30_pro` |
 | `i2v-recamera` | 图生视频 (运镜) | `jimeng_i2v_recamera_v30` |
 
 ### 6.2 视频提交
@@ -170,6 +172,10 @@ jimeng download --task-id <task_id> --dir ./outputs --overwrite --format json
 - `--image-url` / `--image-file`：参考图输入
 - `--template`：运镜模板 ID (针对 i2v-recamera)
 - `--camera-strength`：运镜强度 `weak|medium|strong` (针对 i2v-recamera)
+- `--wait`：提交后自动等待任务完成
+- `--wait-timeout`：等待超时时间，默认 `10m`
+- `--download-dir`：完成后自动下载到指定目录
+- `--overwrite`：下载时覆盖已存在的文件
 
 示例：
 
@@ -201,7 +207,22 @@ jimeng video submit \
   --format json
 ```
 
-### 6.3 视频查询、等待与下载
+### 6.3 一步式提交 + 等待 + 下载
+
+```bash
+# 文生视频 Pro + 等待 + 下载
+jimeng video submit \
+  --preset t2v-pro \
+  --prompt "一只在森林中奔跑的小狗" \
+  --wait \
+  --wait-timeout 10m \
+  --download-dir ./outputs \
+  --overwrite \
+  --format json
+```
+
+
+### 6.4 视频查询、等待与下载
 
 ```bash
 # 查询状态

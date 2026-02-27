@@ -22,6 +22,10 @@ type videoSubmitFlagValues struct {
 	imageFile      []string
 	template       string
 	cameraStrength string
+	wait           bool
+	waitTimeout    string
+	downloadDir    string
+	overwrite      bool
 }
 
 type videoQueryFlagValues struct {
@@ -60,11 +64,6 @@ var videoSubmitCmd = &cobra.Command{
 	Use:   "submit",
 	Short: "Submit a video generation task",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, formatter, err := newClientAndFormatter(cmd)
-		if err != nil {
-			return err
-		}
-
 		ctx := cmd.Context()
 		if ctx == nil {
 			ctx = context.Background()
@@ -75,18 +74,54 @@ var videoSubmitCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := client.SubmitVideoTask(ctx, req)
+		downloadDir := strings.TrimSpace(videoSubmitFlags.downloadDir)
+		flowCfg := jimeng.VideoFlowConfig{
+			WaitEnabled: videoSubmitFlags.wait || downloadDir != "",
+			DownloadDir: downloadDir,
+			Overwrite:   videoSubmitFlags.overwrite,
+		}
+		if raw := strings.TrimSpace(videoSubmitFlags.waitTimeout); raw != "" {
+			d, err := time.ParseDuration(raw)
+			if err != nil {
+				return fmt.Errorf("invalid --wait-timeout: %w", err)
+			}
+			flowCfg.WaitTimeout = d
+		}
+
+		if err := flowCfg.Validate(); err != nil {
+			return err
+		}
+
+		client, formatter, err := newClientAndFormatter(cmd)
 		if err != nil {
 			return err
 		}
 
-		out, err := formatVideoSubmitResponse(formatter, resp)
+		if !flowCfg.WaitEnabled {
+			resp, err := client.SubmitVideoTask(ctx, req)
+			if err != nil {
+				return err
+			}
+
+			out, err := formatVideoSubmitResponse(formatter, resp)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), out)
+			return nil
+		}
+
+		orchestrator := jimeng.NewVideoFlowOrchestrator(client)
+		flowRes, flowErr := orchestrator.SubmitAndWait(ctx, req.Preset, &req, flowCfg)
+		out, err := formatVideoSubmitFlowResult(formatter, req.Preset, flowRes)
 		if err != nil {
 			return err
 		}
-
-		fmt.Fprintln(cmd.OutOrStdout(), out)
-		return nil
+		if strings.TrimSpace(out) != "" {
+			fmt.Fprintln(cmd.OutOrStdout(), out)
+		}
+		return flowErr
 	},
 }
 
@@ -99,6 +134,15 @@ type videoSubmitResult struct {
 	Message     string          `json:"message"`
 	RequestID   string          `json:"request_id"`
 	TimeElapsed int             `json:"time_elapsed"`
+}
+
+type videoSubmitFlowResult struct {
+	TaskID   string          `json:"task_id"`
+	Preset   api.VideoPreset `json:"preset"`
+	Status   string          `json:"status,omitempty"`
+	VideoURL string          `json:"video_url,omitempty"`
+	File     string          `json:"file,omitempty"`
+	Error    string          `json:"error,omitempty"`
 }
 
 type videoQueryResult struct {
@@ -168,48 +212,34 @@ func buildVideoSubmitRequest() (jimeng.VideoSubmitRequest, error) {
 		CameraStrength: cameraStrength,
 	}
 
-	switch preset {
-	case api.VideoPresetT2V720, api.VideoPresetT2V1080:
+	capabilities := api.GetPresetCapabilities(preset)
+	if !capabilities.Supported {
+		return jimeng.VideoSubmitRequest{}, invalidVideoPresetError(preset)
+	}
+
+	if capabilities.AcceptsFrames {
 		if req.Frames == 0 {
-			req.Frames = 121
+			req.Frames = capabilities.DefaultFrames
 		}
 		if req.AspectRatio == "" {
-			req.AspectRatio = "16:9"
+			req.AspectRatio = capabilities.DefaultAspectRatio
 		}
-		if len(req.ImageURLs) > 0 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url or --image-file is not allowed for %q", preset)
-		}
-	case api.VideoPresetI2VFirst:
-		if len(req.ImageURLs) == 0 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input is required for %q", preset)
-		}
-		if len(req.ImageURLs) != 1 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input for %q requires exactly 1 image (URL or file)", preset)
-		}
-	case api.VideoPresetI2VFirstTail:
-		if len(req.ImageURLs) != 2 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input for %q requires exactly 2 images (URLs or files)", preset)
-		}
-	case api.VideoPresetI2VRecamera:
-		if len(req.ImageURLs) == 0 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input is required for %q", preset)
-		}
-		if len(req.ImageURLs) != 1 {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input for %q requires exactly 1 image (URL or file)", preset)
-		}
-		if req.TemplateID == "" {
-			return jimeng.VideoSubmitRequest{}, fmt.Errorf("--template is required for %q", preset)
-		}
-	default:
-		return jimeng.VideoSubmitRequest{}, fmt.Errorf(
-			"invalid --preset: %q (supported: %q|%q|%q|%q|%q)",
-			preset,
-			api.VideoPresetT2V720,
-			api.VideoPresetT2V1080,
-			api.VideoPresetI2VFirst,
-			api.VideoPresetI2VFirstTail,
-			api.VideoPresetI2VRecamera,
-		)
+	}
+
+	if len(req.ImageURLs) > 0 && !capabilities.AcceptsImage {
+		return jimeng.VideoSubmitRequest{}, fmt.Errorf("--image-url or --image-file is not allowed for %q", preset)
+	}
+
+	if capabilities.RequiresImage && len(req.ImageURLs) == 0 {
+		return jimeng.VideoSubmitRequest{}, fmt.Errorf("image input is required for %q", preset)
+	}
+
+	if capabilities.MinImageCount > 0 && capabilities.MinImageCount == capabilities.MaxImageCount && len(req.ImageURLs) > 0 && len(req.ImageURLs) != capabilities.MinImageCount {
+		return jimeng.VideoSubmitRequest{}, fmt.Errorf(imageCountValidationMessage(capabilities.MinImageCount), preset)
+	}
+
+	if capabilities.AcceptsTemplate && req.TemplateID == "" {
+		return jimeng.VideoSubmitRequest{}, fmt.Errorf("--template is required for %q", preset)
 	}
 
 	if err := jimeng.ValidateVideoSubmitRequest(&req); err != nil {
@@ -217,6 +247,32 @@ func buildVideoSubmitRequest() (jimeng.VideoSubmitRequest, error) {
 	}
 
 	return req, nil
+}
+
+func invalidVideoPresetError(preset api.VideoPreset) error {
+	return fmt.Errorf(
+		"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q)",
+		preset,
+		api.VideoPresetT2V720,
+		api.VideoPresetT2V1080,
+		api.VideoPresetT2VPro,
+		api.VideoPresetI2VFirst,
+		api.VideoPresetI2VFirstPro,
+		api.VideoPresetI2VFirstTail,
+		api.VideoPresetI2VRecamera,
+	)
+}
+
+func imageCountValidationMessage(expectedCount int) string {
+	if expectedCount == 2 {
+		return "image input for %q requires exactly 2 images (URLs or files)"
+	}
+
+	if expectedCount == 1 {
+		return "image input for %q requires exactly 1 image (URL or file)"
+	}
+
+	return fmt.Sprintf("image input for %%q requires exactly %d images", expectedCount)
 }
 
 func parseVideoImageURLs(raw string) ([]string, error) {
@@ -298,6 +354,55 @@ func formatVideoSubmitResponse(formatter *output.Formatter, resp *jimeng.VideoSu
 	}
 }
 
+func formatVideoSubmitFlowResult(formatter *output.Formatter, preset api.VideoPreset, resp *jimeng.VideoFlowResult) (string, error) {
+	if resp == nil {
+		return "", nil
+	}
+
+	res := videoSubmitFlowResult{TaskID: resp.TaskID, Preset: preset}
+	res.Status = strings.TrimSpace(resp.Status)
+	res.VideoURL = strings.TrimSpace(resp.VideoURL)
+	res.File = strings.TrimSpace(resp.DownloadPath)
+	if resp.Error != nil {
+		res.Error = resp.Error.Error()
+	}
+
+	format := output.FormatText
+	if formatter != nil && formatter.Format != "" {
+		format = formatter.Format
+	}
+
+	switch format {
+	case output.FormatJSON:
+		b, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	case output.FormatText:
+		parts := make([]string, 0, 6)
+		parts = append(parts, fmt.Sprintf("TaskID=%s", res.TaskID))
+		if res.Preset != "" {
+			parts = append(parts, fmt.Sprintf("Preset=%s", res.Preset))
+		}
+		if res.Status != "" {
+			parts = append(parts, fmt.Sprintf("Status=%s", res.Status))
+		}
+		if res.VideoURL != "" {
+			parts = append(parts, fmt.Sprintf("VideoURL=%s", res.VideoURL))
+		}
+		if res.File != "" {
+			parts = append(parts, fmt.Sprintf("File=%s", res.File))
+		}
+		if res.Error != "" {
+			parts = append(parts, fmt.Sprintf("Error=%s", res.Error))
+		}
+		return strings.Join(parts, " "), nil
+	default:
+		return "", fmt.Errorf("invalid --format: %q (supported: text|json)", format)
+	}
+}
+
 var videoQueryCmd = &cobra.Command{
 	Use:   "query",
 	Short: "Query video task status",
@@ -346,21 +451,19 @@ func buildVideoQueryRequest() (jimeng.VideoGetResultRequest, error) {
 	reqKey, err := api.VideoQueryReqKey(preset)
 	if err != nil {
 		return jimeng.VideoGetResultRequest{}, fmt.Errorf(
-			"invalid --preset: %q (supported: %q|%q|%q|%q|%q)",
+			"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q)",
 			preset,
 			api.VideoPresetT2V720,
 			api.VideoPresetT2V1080,
+			api.VideoPresetT2VPro,
 			api.VideoPresetI2VFirst,
+			api.VideoPresetI2VFirstPro,
 			api.VideoPresetI2VFirstTail,
 			api.VideoPresetI2VRecamera,
 		)
 	}
 
-	return jimeng.VideoGetResultRequest{
-		TaskID: taskID,
-		Preset: preset,
-		ReqKey: reqKey,
-	}, nil
+	return jimeng.VideoGetResultRequest{TaskID: taskID, Preset: preset, ReqKey: reqKey}, nil
 }
 
 func formatVideoQueryResponse(formatter *output.Formatter, taskID string, resp *jimeng.VideoGetResultResponse) (string, error) {
@@ -454,11 +557,13 @@ func buildVideoWaitRequest() (videoWaitRequest, error) {
 	}
 	if _, err := api.VideoQueryReqKey(preset); err != nil {
 		return videoWaitRequest{}, fmt.Errorf(
-			"invalid --preset: %q (supported: %q|%q|%q|%q|%q)",
+			"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q)",
 			preset,
 			api.VideoPresetT2V720,
 			api.VideoPresetT2V1080,
+			api.VideoPresetT2VPro,
 			api.VideoPresetI2VFirst,
+			api.VideoPresetI2VFirstPro,
 			api.VideoPresetI2VFirstTail,
 			api.VideoPresetI2VRecamera,
 		)
@@ -473,14 +578,7 @@ func buildVideoWaitRequest() (videoWaitRequest, error) {
 		return videoWaitRequest{}, err
 	}
 
-	return videoWaitRequest{
-		TaskID: taskID,
-		Preset: preset,
-		Options: jimeng.WaitOptions{
-			Interval: interval,
-			Timeout:  timeout,
-		},
-	}, nil
+	return videoWaitRequest{TaskID: taskID, Preset: preset, Options: jimeng.WaitOptions{Interval: interval, Timeout: timeout}}, nil
 }
 
 func parseVideoWaitDuration(flagName, raw string) (time.Duration, error) {
@@ -621,6 +719,10 @@ func init() {
 	videoSubmitCmd.Flags().StringArrayVar(&videoSubmitFlags.imageFile, "image-file", nil, "Input local image file path (repeatable, mutual exclusive with --image-url)")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.template, "template", "", "Template ID")
 	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.cameraStrength, "camera-strength", "", "Camera strength: weak|medium|strong")
+	videoSubmitCmd.Flags().BoolVar(&videoSubmitFlags.wait, "wait", false, "Wait for task completion")
+	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.waitTimeout, "wait-timeout", "", "Wait timeout duration, e.g. 60s, 5m")
+	videoSubmitCmd.Flags().StringVar(&videoSubmitFlags.downloadDir, "download-dir", "", "If set, download result video into this directory (implies --wait)")
+	videoSubmitCmd.Flags().BoolVar(&videoSubmitFlags.overwrite, "overwrite", false, "Overwrite existing files when downloading")
 	if err := videoSubmitCmd.MarkFlagRequired("preset"); err != nil {
 		panic(err)
 	}

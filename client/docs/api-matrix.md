@@ -58,11 +58,13 @@
 
 | 预设 (Preset) | 对应 ReqKey | 变体 (Variant) | 说明 |
 | :--- | :--- | :--- | :--- |
-| `t2v-720` | `jimeng_t2v_v30_720p` | `t2v` | 文生视频 720p |
+| `t2v-720` | `jimeng_t2v_v30` | `t2v` | 文生视频 720p |
 | `t2v-1080` | `jimeng_t2v_v30_1080p` | `t2v` | 文生视频 1080p |
 | `i2v-first` | `jimeng_i2v_first_v30_1080` | `i2v-first-frame` | 图生视频 (首帧) |
 | `i2v-first-tail` | `jimeng_i2v_first_tail_v30_1080` | `i2v-first-tail` | 图生视频 (首尾帧) |
 | `i2v-recamera` | `jimeng_i2v_recamera_v30` | `i2v-recamera` | 图生视频 (运镜) |
+| `t2v-pro` | `jimeng_ti2v_v30_pro` | `t2v-pro` | 文生视频 3.0 Pro |
+| `i2v-first-pro` | `jimeng_ti2v_v30_pro` | `i2v-first-pro` | 图生视频 3.0 Pro (首帧) |
 
 ### 视频提交参数 (Video Submit)
 

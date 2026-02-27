@@ -53,6 +53,11 @@ func TestVideoSubmitFlags(t *testing.T) {
 		"--image-file",
 		"--template",
 		"--camera-strength",
+		"--wait",
+		"--wait-timeout",
+		"--download-dir",
+		"--overwrite",
+		"--camera-strength",
 	}
 	for _, flag := range expectedFlags {
 		if !strings.Contains(out, flag) {
@@ -169,7 +174,7 @@ func TestVideoQuery_FormatResponseIncludesStatusPresetReqKeyAndVideoURL(t *testi
 	if !strings.Contains(res, "Preset=t2v-720") {
 		t.Fatalf("expected preset in text output, got=%q", res)
 	}
-	if !strings.Contains(res, "ReqKey=jimeng_t2v_v30_720p") {
+	if !strings.Contains(res, "ReqKey=jimeng_t2v_v30") {
 		t.Fatalf("expected req_key in text output, got=%q", res)
 	}
 	if !strings.Contains(res, "VideoURL=https://cdn.example.com/video.mp4") {
@@ -467,7 +472,7 @@ func TestVideoSubmit_FormatResponseIncludesPresetAndReqKey(t *testing.T) {
 	if !strings.Contains(res, "Preset=t2v-720") {
 		t.Fatalf("expected preset in text output, got=%q", res)
 	}
-	if !strings.Contains(res, "ReqKey=jimeng_t2v_v30_720p") {
+	if !strings.Contains(res, "ReqKey=jimeng_t2v_v30") {
 		t.Fatalf("expected req_key in text output, got=%q", res)
 	}
 }
@@ -612,6 +617,58 @@ func TestVideoSubmit_LegacyURLCompatibility(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "--image-url must contain at least one non-empty URL") {
 			t.Fatalf("expected specific error message, got: %v", err)
+		}
+	})
+}
+
+func TestVideoSubmit_WaitFlags(t *testing.T) {
+	reset := func() {
+		videoSubmitFlags = videoSubmitFlagValues{}
+	}
+
+	t.Run("parses wait flags", func(t *testing.T) {
+		reset()
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "t2v-720", "--prompt", "test", "--wait", "--wait-timeout", "10m", "--download-dir", "./out", "--overwrite"})
+		// Execute will call RunE, which will parse flags into videoSubmitFlags
+		// We don't care about the actual execution error here as long as flags are parsed.
+		_ = rootCmd.Execute()
+
+		if videoSubmitFlags.wait != true {
+			t.Errorf("expected wait=true, got=%v", videoSubmitFlags.wait)
+		}
+		if videoSubmitFlags.waitTimeout != "10m" {
+			t.Errorf("expected waitTimeout=10m, got=%q", videoSubmitFlags.waitTimeout)
+		}
+		if videoSubmitFlags.downloadDir != "./out" {
+			t.Errorf("expected downloadDir=./out, got=%q", videoSubmitFlags.downloadDir)
+		}
+		if videoSubmitFlags.overwrite != true {
+			t.Errorf("expected overwrite=true, got=%v", videoSubmitFlags.overwrite)
+		}
+	})
+
+	t.Run("validates wait timeout", func(t *testing.T) {
+		reset()
+		rootCmd := RootCmd()
+		rootCmd.SetArgs([]string{"video", "submit", "--preset", "t2v-720", "--prompt", "test", "--wait-timeout", "invalid"})
+		err := rootCmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for invalid wait-timeout, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid --wait-timeout") {
+			t.Errorf("expected wait-timeout validation error, got=%v", err)
+		}
+	})
+
+	t.Run("validates download requires wait", func(t *testing.T) {
+		cfg := jimeng.VideoFlowConfig{
+			DownloadDir: "./out",
+			WaitEnabled: false,
+		}
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected error for download without wait, got nil")
 		}
 	})
 }

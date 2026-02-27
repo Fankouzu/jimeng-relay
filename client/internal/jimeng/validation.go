@@ -100,9 +100,9 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 
 	if req.Variant == "" && req.Preset != "" {
 		switch req.Preset {
-		case api.VideoPresetT2V720, api.VideoPresetT2V1080:
+		case api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetT2VPro:
 			req.Variant = VideoVariantT2V
-		case api.VideoPresetI2VFirst:
+		case api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro:
 			req.Variant = VideoVariantI2VFirstFrame
 		case api.VideoPresetI2VFirstTail:
 			req.Variant = VideoVariantI2VFirstTail

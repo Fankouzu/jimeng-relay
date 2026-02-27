@@ -476,7 +476,7 @@ func TestVideoErrorDiagnostics_50400(t *testing.T) {
 		require.Error(t, err)
 		// These assertions are expected to FAIL in the RED phase
 		require.ErrorContains(t, err, "preset=t2v-720")
-		require.ErrorContains(t, err, "req_key=jimeng_t2v_v30_720p")
+		require.ErrorContains(t, err, "req_key=jimeng_t2v_v30")
 		require.ErrorContains(t, err, "request_id=rid-50400")
 		require.ErrorContains(t, err, "host="+parsedURL.Host)
 		require.ErrorContains(t, err, "region=cn-north-1")
@@ -497,7 +497,7 @@ func TestVideoErrorDiagnostics_50400(t *testing.T) {
 		require.Error(t, err)
 		// These assertions are expected to FAIL in the RED phase
 		require.ErrorContains(t, err, "preset=t2v-720")
-		require.ErrorContains(t, err, "req_key=jimeng_t2v_v30_720p")
+		require.ErrorContains(t, err, "req_key=jimeng_t2v_v30")
 		require.ErrorContains(t, err, "request_id=rid-50400")
 		require.ErrorContains(t, err, "host="+parsedURL.Host)
 		require.ErrorContains(t, err, "region=cn-north-1")
