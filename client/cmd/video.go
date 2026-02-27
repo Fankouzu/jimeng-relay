@@ -251,13 +251,15 @@ func buildVideoSubmitRequest() (jimeng.VideoSubmitRequest, error) {
 
 func invalidVideoPresetError(preset api.VideoPreset) error {
 	return fmt.Errorf(
-		"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q)",
+		"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q|%q|%q)",
 		preset,
 		api.VideoPresetT2V720,
 		api.VideoPresetT2V1080,
 		api.VideoPresetT2VPro,
+		api.VideoPresetI2VFirst720,
 		api.VideoPresetI2VFirst,
 		api.VideoPresetI2VFirstPro,
+		api.VideoPresetI2VFirstTail720,
 		api.VideoPresetI2VFirstTail,
 		api.VideoPresetI2VRecamera,
 	)
@@ -451,13 +453,15 @@ func buildVideoQueryRequest() (jimeng.VideoGetResultRequest, error) {
 	reqKey, err := api.VideoQueryReqKey(preset)
 	if err != nil {
 		return jimeng.VideoGetResultRequest{}, fmt.Errorf(
-			"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q)",
+			"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q|%q|%q)",
 			preset,
 			api.VideoPresetT2V720,
 			api.VideoPresetT2V1080,
 			api.VideoPresetT2VPro,
+			api.VideoPresetI2VFirst720,
 			api.VideoPresetI2VFirst,
 			api.VideoPresetI2VFirstPro,
+			api.VideoPresetI2VFirstTail720,
 			api.VideoPresetI2VFirstTail,
 			api.VideoPresetI2VRecamera,
 		)
@@ -557,13 +561,15 @@ func buildVideoWaitRequest() (videoWaitRequest, error) {
 	}
 	if _, err := api.VideoQueryReqKey(preset); err != nil {
 		return videoWaitRequest{}, fmt.Errorf(
-			"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q)",
+			"invalid --preset: %q (supported: %q|%q|%q|%q|%q|%q|%q|%q|%q)",
 			preset,
 			api.VideoPresetT2V720,
 			api.VideoPresetT2V1080,
 			api.VideoPresetT2VPro,
+			api.VideoPresetI2VFirst720,
 			api.VideoPresetI2VFirst,
 			api.VideoPresetI2VFirstPro,
+			api.VideoPresetI2VFirstTail720,
 			api.VideoPresetI2VFirstTail,
 			api.VideoPresetI2VRecamera,
 		)

@@ -97,14 +97,16 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 	req.TemplateID = strings.TrimSpace(req.TemplateID)
 	req.CameraStrength = strings.TrimSpace(req.CameraStrength)
 	req.ImageURLs = submitCleanStringSlice(req.ImageURLs)
+	req.BinaryDataBase64 = submitCleanStringSlice(req.BinaryDataBase64)
 
+	totalImageCount := len(req.ImageURLs) + len(req.BinaryDataBase64)
 	if req.Variant == "" && req.Preset != "" {
 		switch req.Preset {
 		case api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetT2VPro:
 			req.Variant = VideoVariantT2V
-		case api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro:
+		case api.VideoPresetI2VFirst720, api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro:
 			req.Variant = VideoVariantI2VFirstFrame
-		case api.VideoPresetI2VFirstTail:
+		case api.VideoPresetI2VFirstTail720, api.VideoPresetI2VFirstTail:
 			req.Variant = VideoVariantI2VFirstTail
 		case api.VideoPresetI2VRecamera:
 			req.Variant = VideoVariantRecamera
@@ -120,8 +122,8 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 		if _, ok := validVideoAspectRatios[req.AspectRatio]; !ok {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "aspect_ratio is invalid", nil)
 		}
-		if len(req.ImageURLs) > 0 {
-			return internalerrors.New(internalerrors.ErrValidationFailed, "image_urls are not allowed for t2v", nil)
+		if totalImageCount > 0 {
+			return internalerrors.New(internalerrors.ErrValidationFailed, "image_urls and binary_data_base64 are not allowed for t2v", nil)
 		}
 		if req.TemplateID != "" {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "template_id is not allowed for t2v", nil)
@@ -133,7 +135,7 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 		if err := validateVideoInlineImagePayloads(req.ImageURLs); err != nil {
 			return err
 		}
-		if len(req.ImageURLs) != 1 {
+		if totalImageCount != 1 {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "i2v first-frame requires exactly 1 image", nil)
 		}
 		if req.TemplateID != "" {
@@ -149,7 +151,7 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 		if err := validateVideoInlineImagePayloads(req.ImageURLs); err != nil {
 			return err
 		}
-		if len(req.ImageURLs) != 2 {
+		if totalImageCount != 2 {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "i2v first-tail requires exactly 2 images", nil)
 		}
 		if total := estimatedVideoInlineImageAggregateDecodedBytes(req.ImageURLs); total >= 2*maxVideoInlineImageBytes {
@@ -172,7 +174,7 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 		if err := validateVideoInlineImagePayloads(req.ImageURLs); err != nil {
 			return err
 		}
-		if len(req.ImageURLs) != 1 {
+		if totalImageCount != 1 {
 			return internalerrors.New(internalerrors.ErrValidationFailed, "i2v recamera requires exactly 1 image", nil)
 		}
 		if req.TemplateID == "" {

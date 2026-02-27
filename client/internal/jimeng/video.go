@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -31,16 +30,17 @@ const (
 )
 
 type VideoSubmitRequest struct {
-	Variant        VideoVariant    `json:"variant"`
-	Preset         api.VideoPreset `json:"preset"`
-	ReqKey         string          `json:"req_key"`
-	Prompt         string          `json:"prompt"`
-	Frames         int             `json:"frames"`
-	AspectRatio    string          `json:"aspect_ratio"`
-	Seed           int             `json:"seed"`
-	ImageURLs      []string        `json:"image_urls"`
-	TemplateID     string          `json:"template_id"`
-	CameraStrength string          `json:"camera_strength"`
+	Variant           VideoVariant    `json:"variant"`
+	Preset            api.VideoPreset `json:"preset"`
+	ReqKey            string          `json:"req_key"`
+	Prompt            string          `json:"prompt"`
+	Frames            int             `json:"frames"`
+	AspectRatio       string          `json:"aspect_ratio"`
+	Seed              int             `json:"seed"`
+	ImageURLs         []string        `json:"image_urls"`
+	BinaryDataBase64  []string        `json:"binary_data_base64"`
+	TemplateID        string          `json:"template_id"`
+	CameraStrength    string          `json:"camera_strength"`
 }
 
 type VideoSubmitResponse struct {
@@ -109,12 +109,20 @@ func (c *Client) SubmitVideoTask(ctx context.Context, req VideoSubmitRequest) (*
 		)
 	}
 
-	if len(req.ImageURLs) > 0 {
-		prepared, err := prepareVideoImageURLs(req.ImageURLs)
+	if len(req.ImageURLs) > 0 || len(req.BinaryDataBase64) > 0 {
+		// Combine ImageURLs and BinaryDataBase64 for processing
+		allInputs := make([]string, 0, len(req.ImageURLs)+len(req.BinaryDataBase64))
+		allInputs = append(allInputs, req.ImageURLs...)
+		allInputs = append(allInputs, req.BinaryDataBase64...)
+
+		prepared, err := prepareVideoImages(allInputs)
 		if err != nil {
 			return nil, err
 		}
-		req.ImageURLs = prepared
+		if prepared != nil {
+			req.ImageURLs = prepared.imageURLs
+			req.BinaryDataBase64 = prepared.binaryDataBase64
+		}
 	}
 
 	if err := ValidateVideoSubmitRequest(&req); err != nil {
@@ -136,8 +144,11 @@ func (c *Client) SubmitVideoTask(ctx context.Context, req VideoSubmitRequest) (*
 	if req.Seed != 0 {
 		reqBody["seed"] = req.Seed
 	}
-	if len(req.ImageURLs) > 0 {
-		reqBody["image_urls"] = req.ImageURLs
+if len(req.ImageURLs) > 0 {
+reqBody["image_urls"] = req.ImageURLs
+	}
+	if len(req.BinaryDataBase64) > 0 {
+		reqBody["binary_data_base64"] = req.BinaryDataBase64
 	}
 	if req.TemplateID != "" {
 		reqBody["template_id"] = req.TemplateID
@@ -236,28 +247,65 @@ func (c *Client) SubmitVideoTask(ctx context.Context, req VideoSubmitRequest) (*
 	}, nil
 }
 
-func prepareVideoImageURLs(raw []string) ([]string, error) {
+// preparedVideoImages holds the processed image data for video generation
+type preparedVideoImages struct {
+	imageURLs        []string
+	binaryDataBase64 []string
+}
+
+func prepareVideoImages(raw []string) (*preparedVideoImages, error) {
 	urls := submitCleanStringSlice(raw)
 	if len(urls) == 0 {
 		return nil, nil
 	}
 
-	out := make([]string, 0, len(urls))
+	result := &preparedVideoImages{
+		imageURLs:        make([]string, 0, len(urls)),
+		binaryDataBase64: make([]string, 0, len(urls)),
+	}
+
 	for _, u := range urls {
 		lower := strings.ToLower(u)
-		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "data:") {
-			out = append(out, u)
+
+		// HTTP/HTTPS URLs go to image_urls
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			result.imageURLs = append(result.imageURLs, u)
 			continue
 		}
 
+// Data URLs: extract base64 content and put in binary_data_base64
+if strings.HasPrefix(lower, "data:image/") {
+comma := strings.Index(u, ",")
+if comma < 0 {
+return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("invalid data URL format for image: missing base64 content"), nil)
+}
+base64Content := u[comma+1:]
+if base64Content == "" {
+return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("invalid data URL format for image: empty base64 content"), nil)
+			}
+			// Validate base64 content size
+			if estimatedBase64DecodedLength(base64Content) > maxVideoInlineImageBytes {
+				return nil, internalerrors.New(
+					internalerrors.ErrValidationFailed,
+					fmt.Sprintf("local i2v image payload is too large (max %d bytes after decode); upload the image to a URL or compress it before submit", maxVideoInlineImageBytes),
+					nil,
+				)
+			}
+result.binaryDataBase64 = append(result.binaryDataBase64, base64Content)
+continue
+}
+
+		// Check if it's a local file path
 		isPathLike := strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") || strings.HasPrefix(u, "/")
 		if !isPathLike {
 			if _, err := os.Stat(u); err != nil {
-				out = append(out, u)
+				// Not a file, treat as URL (will be validated by server)
+				result.imageURLs = append(result.imageURLs, u)
 				continue
 			}
 		}
 
+		// It's a local file - read and encode to base64
 		info, err := os.Stat(u)
 		if err != nil {
 			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("stat --image-file %q failed", u), err)
@@ -280,16 +328,12 @@ func prepareVideoImageURLs(raw []string) ([]string, error) {
 		if err != nil {
 			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("read --image-file %q failed", u), err)
 		}
-		mime := http.DetectContentType(data)
-		if !strings.HasPrefix(mime, "image/") {
-			mime = "image/png"
-		}
 
 		encoded := base64.StdEncoding.EncodeToString(data)
-		out = append(out, fmt.Sprintf("data:%s;base64,%s", mime, encoded))
+		result.binaryDataBase64 = append(result.binaryDataBase64, encoded)
 	}
 
-	return out, nil
+	return result, nil
 }
 
 func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) (*VideoGetResultResponse, error) {
@@ -413,9 +457,9 @@ func videoVariantForPreset(preset api.VideoPreset) (VideoVariant, error) {
 	switch preset {
 	case api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetT2VPro:
 		return VideoVariantT2V, nil
-	case api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro:
+	case api.VideoPresetI2VFirst720, api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro:
 		return VideoVariantI2VFirstFrame, nil
-	case api.VideoPresetI2VFirstTail:
+	case api.VideoPresetI2VFirstTail720, api.VideoPresetI2VFirstTail:
 		return VideoVariantI2VFirstTail, nil
 	case api.VideoPresetI2VRecamera:
 		return VideoVariantRecamera, nil
@@ -425,7 +469,7 @@ func videoVariantForPreset(preset api.VideoPreset) (VideoVariant, error) {
 }
 
 func invalidVideoPresetMessage(preset api.VideoPreset) string {
-	return fmt.Sprintf("invalid preset %q; supported presets: %q, %q, %q, %q, %q", preset, api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetI2VFirst, api.VideoPresetI2VFirstTail, api.VideoPresetI2VRecamera)
+	return fmt.Sprintf("invalid preset %q; supported presets: %q, %q, %q, %q, %q, %q, %q, %q, %q", preset, api.VideoPresetT2V720, api.VideoPresetT2V1080, api.VideoPresetT2VPro, api.VideoPresetI2VFirst720, api.VideoPresetI2VFirst, api.VideoPresetI2VFirstPro, api.VideoPresetI2VFirstTail720, api.VideoPresetI2VFirstTail, api.VideoPresetI2VRecamera)
 }
 
 type videoErrorDiagnosticContext struct {

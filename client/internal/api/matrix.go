@@ -10,14 +10,15 @@ const (
 
 	ReqKeyJimengT2VV30_720p          = "jimeng_t2v_v30"
 	ReqKeyJimengT2VV30_1080p         = "jimeng_t2v_v30_1080p"
+	ReqKeyJimengI2VFirstV30           = "jimeng_i2v_first_v30"
 	ReqKeyJimengI2VFirstV30_1080     = "jimeng_i2v_first_v30_1080"
+	ReqKeyJimengI2VFirstTailV30       = "jimeng_i2v_first_tail_v30"
 	ReqKeyJimengI2VFirstTailV30_1080 = "jimeng_i2v_first_tail_v30_1080"
 	ReqKeyJimengI2VRecameraV30       = "jimeng_i2v_recamera_v30"
 
 	ReqKeyJimengT2VV30Pro      = "jimeng_ti2v_v30_pro"
 	ReqKeyJimengI2VFirstV30Pro = "jimeng_ti2v_v30_pro"
 )
-
 const (
 	StatusInQueue    = "in_queue"
 	StatusGenerating = "generating"
@@ -93,13 +94,15 @@ func (m ApiMatrix) ValidateAction(action string) error {
 type VideoPreset string
 
 const (
-	VideoPresetT2V720       VideoPreset = "t2v-720"
-	VideoPresetT2V1080      VideoPreset = "t2v-1080"
-	VideoPresetI2VFirst     VideoPreset = "i2v-first"
-	VideoPresetI2VFirstTail VideoPreset = "i2v-first-tail"
-	VideoPresetI2VRecamera  VideoPreset = "i2v-recamera"
-	VideoPresetT2VPro       VideoPreset = "t2v-pro"
-	VideoPresetI2VFirstPro  VideoPreset = "i2v-first-pro"
+	VideoPresetT2V720          VideoPreset = "t2v-720"
+	VideoPresetT2V1080         VideoPreset = "t2v-1080"
+	VideoPresetI2VFirst720     VideoPreset = "i2v-first-720"
+	VideoPresetI2VFirst        VideoPreset = "i2v-first"
+	VideoPresetI2VFirstTail720 VideoPreset = "i2v-first-tail-720"
+	VideoPresetI2VFirstTail    VideoPreset = "i2v-first-tail"
+	VideoPresetI2VRecamera     VideoPreset = "i2v-recamera"
+	VideoPresetT2VPro          VideoPreset = "t2v-pro"
+	VideoPresetI2VFirstPro     VideoPreset = "i2v-first-pro"
 )
 
 type PresetCapabilities struct {
@@ -133,35 +136,49 @@ var presetCapabilities = map[VideoPreset]PresetCapabilities{
 		DefaultFrames:      121,
 		DefaultAspectRatio: "16:9",
 	},
-	VideoPresetI2VFirst: {
-		Supported:     true,
-		RequiresImage: true,
-		AcceptsImage:  true,
-		MinImageCount: 1,
-		MaxImageCount: 1,
+VideoPresetI2VFirst: {
+Supported:     true,
+RequiresImage: true,
+AcceptsImage:  true,
+MinImageCount: 1,
+MaxImageCount: 1,
+},
+VideoPresetI2VFirst720: {
+Supported:     true,
+RequiresImage: true,
+AcceptsImage:  true,
+MinImageCount: 1,
+MaxImageCount: 1,
 	},
-	VideoPresetI2VFirstPro: {
-		Supported:     true,
-		RequiresImage: true,
-		AcceptsImage:  true,
-		MinImageCount: 1,
-		MaxImageCount: 1,
+VideoPresetI2VFirstPro: {
+Supported:     true,
+RequiresImage: true,
+AcceptsImage:  true,
+MinImageCount: 1,
+MaxImageCount: 1,
 	},
-	VideoPresetI2VFirstTail: {
+	VideoPresetI2VFirstTail720: {
 		Supported:     true,
 		RequiresImage: true,
 		AcceptsImage:  true,
 		MinImageCount: 2,
 		MaxImageCount: 2,
 	},
-	VideoPresetI2VRecamera: {
-		Supported:       true,
-		RequiresImage:   true,
-		AcceptsImage:    true,
-		AcceptsTemplate: true,
-		MinImageCount:   1,
-		MaxImageCount:   1,
-	},
+VideoPresetI2VFirstTail: {
+Supported:     true,
+RequiresImage: true,
+AcceptsImage:  true,
+MinImageCount: 2,
+MaxImageCount: 2,
+},
+VideoPresetI2VRecamera: {
+Supported:       true,
+RequiresImage:   true,
+AcceptsImage:    true,
+AcceptsTemplate: true,
+MinImageCount:   1,
+MaxImageCount:   1,
+},
 }
 
 func GetPresetCapabilities(preset VideoPreset) PresetCapabilities {
@@ -173,24 +190,28 @@ func GetPresetCapabilities(preset VideoPreset) PresetCapabilities {
 }
 
 func VideoReqKeyForPreset(preset VideoPreset) (string, error) {
-	switch preset {
-	case VideoPresetT2V720:
-		return ReqKeyJimengT2VV30_720p, nil
-	case VideoPresetT2V1080:
+switch preset {
+case VideoPresetT2V720:
+return ReqKeyJimengT2VV30_720p, nil
+case VideoPresetT2V1080:
 		return ReqKeyJimengT2VV30_1080p, nil
-	case VideoPresetI2VFirst:
+	case VideoPresetI2VFirst720:
+		return ReqKeyJimengI2VFirstV30, nil
+case VideoPresetI2VFirst:
 		return ReqKeyJimengI2VFirstV30_1080, nil
-	case VideoPresetI2VFirstTail:
-		return ReqKeyJimengI2VFirstTailV30_1080, nil
-	case VideoPresetI2VRecamera:
-		return ReqKeyJimengI2VRecameraV30, nil
-	case VideoPresetT2VPro:
-		return ReqKeyJimengT2VV30Pro, nil
-	case VideoPresetI2VFirstPro:
-		return ReqKeyJimengI2VFirstV30Pro, nil
-	default:
-		return "", fmt.Errorf("unsupported video preset: %q", preset)
-	}
+	case VideoPresetI2VFirstTail720:
+		return ReqKeyJimengI2VFirstTailV30, nil
+case VideoPresetI2VFirstTail:
+return ReqKeyJimengI2VFirstTailV30_1080, nil
+case VideoPresetI2VRecamera:
+return ReqKeyJimengI2VRecameraV30, nil
+case VideoPresetT2VPro:
+return ReqKeyJimengT2VV30Pro, nil
+case VideoPresetI2VFirstPro:
+return ReqKeyJimengI2VFirstV30Pro, nil
+default:
+return "", fmt.Errorf("unsupported video preset: %q", preset)
+}
 }
 
 func VideoSubmitReqKey(preset VideoPreset) (string, error) {
