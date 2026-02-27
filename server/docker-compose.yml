@@ -1,0 +1,29 @@
+services:
+  jimeng-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - VOLC_ACCESSKEY=${VOLC_ACCESSKEY}
+      - VOLC_SECRETKEY=${VOLC_SECRETKEY}
+      - VOLC_REGION=${VOLC_REGION:-cn-north-1}
+      - VOLC_HOST=${VOLC_HOST:-visual.volcengineapi.com}
+      - API_KEY_ENCRYPTION_KEY=${API_KEY_ENCRYPTION_KEY}
+      - DATABASE_TYPE=${DATABASE_TYPE:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:-/data/jimeng-relay.db}
+      - SERVER_PORT=8080
+    volumes:
+      - jimeng-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  jimeng-data:
+    driver: local
