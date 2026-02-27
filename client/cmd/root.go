@@ -14,14 +14,15 @@ import (
 )
 
 type rootFlagValues struct {
-	format    string
-	accessKey string
-	secretKey string
-	region    string
-	host      string
-	scheme    string
-	timeout   string
-	debug     bool
+	format     string
+	accessKey  string
+	secretKey  string
+	region     string
+	host       string
+	scheme     string
+	configFile string
+	timeout    string
+	debug      bool
 }
 
 var rootFlags rootFlagValues
@@ -53,6 +54,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootFlags.region, "region", "", fmt.Sprintf("Volcengine region (overrides %s)", config.EnvRegion))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.host, "host", "", fmt.Sprintf("Volcengine API host (overrides %s)", config.EnvHost))
 	rootCmd.PersistentFlags().StringVar(&rootFlags.scheme, "scheme", "", fmt.Sprintf("Volcengine API scheme (overrides %s)", config.EnvScheme))
+	rootCmd.PersistentFlags().StringVar(&rootFlags.configFile, "config-file", "", "Path to env file (default: .env in current working directory)")
 	rootCmd.PersistentFlags().StringVar(&rootFlags.timeout, "timeout", "", fmt.Sprintf("API request timeout duration, e.g. 30s, 2m (overrides %s)", config.EnvTimeout))
 	rootCmd.PersistentFlags().BoolVar(&rootFlags.debug, "debug", false, "Enable debug logging")
 }
@@ -103,6 +105,13 @@ func loadConfigFromRootFlags(cmd *cobra.Command) (config.Config, error) {
 	}
 	if flagChanged(cmd, "scheme") {
 		opts.Scheme = &rootFlags.scheme
+	}
+	if flagChanged(cmd, "config-file") {
+		raw := strings.TrimSpace(rootFlags.configFile)
+		if raw == "" {
+			return config.Config{}, fmt.Errorf("--config-file must not be empty")
+		}
+		opts.ConfigFile = &raw
 	}
 	if flagChanged(cmd, "timeout") {
 		raw := strings.TrimSpace(rootFlags.timeout)

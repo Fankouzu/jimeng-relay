@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/jimeng-relay/client/internal/config"
@@ -45,6 +46,8 @@ func TestRootFlags_SchemeOverride(t *testing.T) {
 	defer os.Unsetenv(config.EnvAccessKey)
 	os.Setenv(config.EnvSecretKey, "test-sk")
 	defer os.Unsetenv(config.EnvSecretKey)
+	os.Setenv(config.EnvHost, "example.com")
+	defer os.Unsetenv(config.EnvHost)
 	os.Setenv(config.EnvScheme, "https")
 	defer os.Unsetenv(config.EnvScheme)
 
@@ -83,5 +86,37 @@ func TestRootFlags_HostFromEnv(t *testing.T) {
 
 	if cfg.Host != "my-host.com" {
 		t.Errorf("expected host 'my-host.com' from env, got %q", cfg.Host)
+	}
+}
+
+func TestRootFlags_ConfigFileOverride(t *testing.T) {
+	os.Setenv(config.EnvAccessKey, "test-ak")
+	defer os.Unsetenv(config.EnvAccessKey)
+	os.Setenv(config.EnvSecretKey, "test-sk")
+	defer os.Unsetenv(config.EnvSecretKey)
+
+	_ = os.Unsetenv(config.EnvHost)
+	_ = os.Unsetenv(config.EnvScheme)
+
+	envPath := filepath.Join(t.TempDir(), "test.env")
+	content := "VOLC_HOST=env-file.com\nVOLC_SCHEME=http"
+	if err := os.WriteFile(envPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write env file: %v", err)
+	}
+
+	rootCmd := RootCmd()
+	if err := rootCmd.PersistentFlags().Parse([]string{"--config-file", envPath}); err != nil {
+		t.Fatalf("failed to parse flags: %v", err)
+	}
+
+	cfg, err := loadConfigFromRootFlags(rootCmd)
+	if err != nil {
+		t.Fatalf("loadConfigFromRootFlags failed: %v", err)
+	}
+	if cfg.Host != "env-file.com" {
+		t.Errorf("expected host from env file, got %q", cfg.Host)
+	}
+	if cfg.Scheme != "http" {
+		t.Errorf("expected scheme from env file, got %q", cfg.Scheme)
 	}
 }

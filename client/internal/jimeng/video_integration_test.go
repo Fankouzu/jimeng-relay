@@ -26,7 +26,10 @@ const (
 func TestIntegrationVideoDirectT2V(t *testing.T) {
 	ensureBaseCredentialsOrSkip(t)
 
-	host := config.DefaultHost
+	host := strings.TrimSpace(os.Getenv(config.EnvHost))
+	if host == "" {
+		t.Skipf("integration test requires %s", config.EnvHost)
+	}
 	scheme := config.DefaultScheme
 	timeout := 8 * time.Minute
 

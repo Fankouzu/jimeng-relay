@@ -337,6 +337,8 @@ func (c *Client) DownloadVideo(ctx context.Context, taskID string, videoURL stri
 	base := path.Base(u.Path)
 	if base == "." || base == "/" || base == "" {
 		base = "video.mp4"
+	} else if filepath.Ext(base) == "" {
+		base += ".mp4"
 	}
 
 	// Ensure deterministic naming: <task_id>-<original_name>

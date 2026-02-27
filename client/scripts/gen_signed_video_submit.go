@@ -34,10 +34,7 @@ func main() {
 	if scheme == "" {
 		scheme = "https"
 	}
-	host := os.Getenv("VOLC_HOST")
-	if host == "" {
-		host = "visual.volcengineapi.com"
-	}
+	host := mustEnv("VOLC_HOST")
 	host = strings.TrimPrefix(host, "https://")
 	host = strings.TrimPrefix(host, "http://")
 	host = strings.TrimSuffix(host, "/")

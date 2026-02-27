@@ -1,8 +1,10 @@
 package config
 
 import (
-	"testing"
+	"errors"
 	"os"
+	"path/filepath"
+	"testing"
 	"time"
 )
 
@@ -48,16 +50,17 @@ func TestLoad_HostSchemePriority(t *testing.T) {
 		os.Clearenv()
 		t.Setenv("VOLC_ACCESSKEY", "dummy")
 		t.Setenv("VOLC_SECRETKEY", "dummy")
-		emptyEnv := ".non-existent"
-		cfg, err := Load(Options{ConfigFile: &emptyEnv})
+		wd, err := os.Getwd()
 		if err != nil {
-			t.Fatalf("Load() unexpected error: %v", err)
+			t.Fatalf("Getwd() unexpected error: %v", err)
 		}
-		if cfg.Host != DefaultHost {
-			t.Errorf("Host mismatch: got %q, want %q", cfg.Host, DefaultHost)
+		t.Cleanup(func() { _ = os.Chdir(wd) })
+		if err := os.Chdir(t.TempDir()); err != nil {
+			t.Fatalf("Chdir() unexpected error: %v", err)
 		}
-		if cfg.Scheme != DefaultScheme {
-			t.Errorf("Scheme mismatch: got %q, want %q", cfg.Scheme, DefaultScheme)
+		_, err = Load(Options{})
+		if err == nil {
+			t.Fatalf("Load() expected error when %s missing", EnvHost)
 		}
 	})
 
@@ -126,6 +129,7 @@ func TestLoad_HostNormalization(t *testing.T) {
 
 	t.Setenv("VOLC_ACCESSKEY", "dummy")
 	t.Setenv("VOLC_SECRETKEY", "dummy")
+	t.Setenv("VOLC_HOST", "example.com")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := Load(Options{Host: &tt.input})
@@ -154,6 +158,7 @@ func TestLoad_SchemeValidation(t *testing.T) {
 
 	t.Setenv("VOLC_ACCESSKEY", "dummy")
 	t.Setenv("VOLC_SECRETKEY", "dummy")
+	t.Setenv("VOLC_HOST", "example.com")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("VOLC_SCHEME", tt.scheme)
@@ -171,9 +176,45 @@ func TestLoad_SchemeValidation(t *testing.T) {
 func TestLoad_InvalidScheme(t *testing.T) {
 	t.Setenv("VOLC_ACCESSKEY", "dummy")
 	t.Setenv("VOLC_SECRETKEY", "dummy")
+	t.Setenv("VOLC_HOST", "example.com")
 	t.Setenv("VOLC_SCHEME", "invalid")
 	_, err := Load(Options{})
 	if err == nil {
 		t.Fatal("Expected error for invalid scheme, got nil")
+	}
+}
+
+func TestLoad_ConfigFileExplicitNotFound(t *testing.T) {
+	os.Clearenv()
+	t.Setenv(EnvAccessKey, "dummy")
+	t.Setenv(EnvSecretKey, "dummy")
+
+	missing := filepath.Join(t.TempDir(), "missing.env")
+	_, err := Load(Options{ConfigFile: &missing})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected not-exist error, got: %v", err)
+	}
+}
+
+func TestLoad_DefaultEnvFileMissingAllowed(t *testing.T) {
+	os.Clearenv()
+	t.Setenv(EnvAccessKey, "dummy")
+	t.Setenv(EnvSecretKey, "dummy")
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatalf("Chdir() unexpected error: %v", err)
+	}
+
+	_, err = Load(Options{})
+	if err == nil {
+		t.Fatalf("Load() expected error when %s missing", EnvHost)
 	}
 }

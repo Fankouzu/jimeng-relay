@@ -61,10 +61,9 @@ func TestBuildURL_UsesConfiguredScheme(t *testing.T) {
 
 func TestBuildURL_HostTrailingSlash(t *testing.T) {
 	url := runScript(t, map[string]string{
-		"VOLC_HOST": "visual.volcengineapi.com/",
+		"VOLC_HOST": "example.com/",
 	})
 
-	// Should not have double slash like https://visual.volcengineapi.com//?Action...
 	if strings.Contains(url, "com//?") {
 		t.Errorf("URL contains double slash after host: %s", url)
 	}
@@ -72,7 +71,7 @@ func TestBuildURL_HostTrailingSlash(t *testing.T) {
 
 func TestBuildURL_HostWithSchemePrefix(t *testing.T) {
 	url := runScript(t, map[string]string{
-		"VOLC_HOST": "https://visual.volcengineapi.com",
+		"VOLC_HOST": "https://example.com",
 	})
 
 	// Should not have double scheme like https://https://...

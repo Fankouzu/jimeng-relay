@@ -19,7 +19,6 @@ const (
 
 const (
 	DefaultRegion  = "cn-north-1"
-	DefaultHost    = "visual.volcengineapi.com"
 	DefaultTimeout = 30 * time.Second
 	DefaultScheme  = "https"
 )
@@ -57,7 +56,7 @@ type Options struct {
 func Load(opts Options) (Config, error) {
 	cfg := Config{
 		Region:  DefaultRegion,
-		Host:    DefaultHost,
+		Host:    "",
 		Scheme:  DefaultScheme,
 		Timeout: DefaultTimeout,
 	}
@@ -65,7 +64,8 @@ func Load(opts Options) (Config, error) {
 	if opts.ConfigFile != nil && *opts.ConfigFile != "" {
 		envFile = *opts.ConfigFile
 	}
-	if err := loadEnvFile(envFile); err != nil {
+	requiredEnvFile := opts.ConfigFile != nil
+	if err := loadEnvFile(envFile, requiredEnvFile); err != nil {
 		return Config{}, err
 	}
 	if v, ok := lookupEnvNonEmpty(EnvRegion); ok {
@@ -97,6 +97,9 @@ func Load(opts Options) (Config, error) {
 			return Config{}, fmt.Errorf("host must not be empty")
 		}
 		cfg.Host = normalizeHost(v)
+	}
+	if cfg.Host == "" {
+		return Config{}, fmt.Errorf("missing %s", EnvHost)
 	}
 	if opts.Scheme != nil {
 		v := strings.TrimSpace(*opts.Scheme)
@@ -152,11 +155,14 @@ func lookupEnvNonEmpty(key string) (string, bool) {
 	return v, true
 }
 
-func loadEnvFile(path string) error {
+func loadEnvFile(path string, required bool) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			if !required {
+				return nil
+			}
+			return fmt.Errorf("env file %s does not exist: %w", path, err)
 		}
 		return fmt.Errorf("failed to read env file %s: %w", path, err)
 	}
