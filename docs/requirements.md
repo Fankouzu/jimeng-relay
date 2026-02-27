@@ -1091,6 +1091,10 @@ go run ./scripts/local_e2e_concurrency.go  # E2E并发测试
 
 ## 13. 开发规范
 
+> **详细规范文档**：
+> - [开发规范 (coding-standards.md)](coding-standards.md) - 代码风格、错误处理、测试规范
+> - [设计规范 (design-principles.md)](design-principles.md) - 架构设计、模块化、安全设计
+
 ### 13.1 代码规范
 
 #### 错误处理

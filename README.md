@@ -138,9 +138,10 @@ jimeng-relay/
 | 文档 | 说明 |
 |:---|:---|
 | [📋 需求规格说明书](docs/requirements.md) | 完整的功能需求、技术规范、API 定义 |
+| [📝 开发规范](docs/coding-standards.md) | 代码风格、错误处理、测试规范 |
+| [📐 设计规范](docs/design-principles.md) | 架构设计、模块化、安全设计 |
 | [🖥️ 服务端 README](server/README.md) | 服务端配置、部署、Key 管理 |
 | [💻 客户端 README](client/README.md) | 客户端安装、命令使用指南 |
-
 ### 服务端专题文档
 
 | 文档 | 说明 |
