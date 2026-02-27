@@ -17,6 +17,7 @@ import (
 
 	"github.com/jimeng-relay/server/internal/config"
 	relayhandler "github.com/jimeng-relay/server/internal/handler/relay"
+	"github.com/jimeng-relay/server/internal/handler/health"
 	"github.com/jimeng-relay/server/internal/logging"
 	"github.com/jimeng-relay/server/internal/middleware/observability"
 	"github.com/jimeng-relay/server/internal/middleware/sigv4"
@@ -115,6 +116,13 @@ func runServer() error {
 
 	obs := observability.Middleware(logger)
 	mux := http.NewServeMux()
+
+	// Health endpoints (no auth required)
+	healthHandler := health.NewHandler(nil)
+	healthRoutes := healthHandler.Routes()
+	mux.Handle("/health", healthRoutes)
+	mux.Handle("/ready", healthRoutes)
+
 	mux.Handle("/", observability.RecoverMiddleware(logger)(obs(authn(app))))
 
 	log.Printf("Starting jimeng-relay server on port %s...", cfg.ServerPort)

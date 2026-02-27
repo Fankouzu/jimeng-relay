@@ -16,6 +16,7 @@ const (
 	EnvHost                      = "VOLC_HOST"
 	EnvTimeout                   = "VOLC_TIMEOUT"
 	EnvServerPort                = "SERVER_PORT"
+	EnvPort                      = "PORT"
 	EnvDatabaseType              = "DATABASE_TYPE"
 	EnvDatabaseURL               = "DATABASE_URL"
 	EnvAPIKeyEncryptionKey       = "API_KEY_ENCRYPTION_KEY"
@@ -128,6 +129,9 @@ func Load(opts Options) (Config, error) {
 		cfg.Timeout = d
 	}
 	if v, ok := lookupEnvNonEmpty(EnvServerPort); ok {
+		cfg.ServerPort = v
+	}
+	if v, ok := lookupEnvNonEmpty(EnvPort); ok {
 		cfg.ServerPort = v
 	}
 	if v, ok := lookupEnvNonEmpty(EnvDatabaseType); ok {
