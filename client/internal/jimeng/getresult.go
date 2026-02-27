@@ -55,8 +55,8 @@ func (c *Client) GetResult(ctx context.Context, req GetResultRequest) (*GetResul
 		}
 
 		if errObj, ok := respBody["error"].(map[string]interface{}); ok {
-			errCode := strings.TrimSpace(toString(errObj["code"]))
-			errMsg := strings.TrimSpace(toString(errObj["message"]))
+			errCode := strings.TrimSpace(ToString(errObj["code"]))
+			errMsg := strings.TrimSpace(ToString(errObj["message"]))
 			return internalerrors.New(
 				relayErrorToClientCode(errCode),
 				fmt.Sprintf("relay error: code=%s message=%s", errCode, errMsg),
@@ -64,10 +64,10 @@ func (c *Client) GetResult(ctx context.Context, req GetResultRequest) (*GetResul
 			)
 		}
 
-		code := toInt(respBody["code"])
-		status := toInt(respBody["status"])
-		message := toString(respBody["message"])
-		requestID := toString(respBody["request_id"])
+		code := ToInt(respBody["code"])
+		status := ToInt(respBody["status"])
+		message := ToString(respBody["message"])
+		requestID := ToString(respBody["request_id"])
 
 		if code == 0 && status == 0 && message == "" && requestID == "" {
 			return internalerrors.New(
@@ -101,18 +101,18 @@ func (c *Client) GetResult(ctx context.Context, req GetResultRequest) (*GetResul
 	}
 
 	resp := &GetResultResponse{
-		Status:    TaskStatus(toString(body["status"])),
-		Code:      toInt(body["code"]),
-		Message:   toString(body["message"]),
-		RequestID: toString(body["request_id"]),
+		Status:    TaskStatus(ToString(body["status"])),
+		Code:      ToInt(body["code"]),
+		Message:   ToString(body["message"]),
+		RequestID: ToString(body["request_id"]),
 	}
 
 	if data, ok := body["data"].(map[string]interface{}); ok {
-		if status := toString(data["status"]); status != "" {
+		if status := ToString(data["status"]); status != "" {
 			resp.Status = TaskStatus(status)
 		}
-		resp.ImageURLs = toStringSlice(data["image_urls"])
-		resp.BinaryDataBase64 = toStringSlice(data["binary_data_base64"])
+		resp.ImageURLs = ToStringSlice(data["image_urls"])
+		resp.BinaryDataBase64 = ToStringSlice(data["binary_data_base64"])
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -135,13 +135,6 @@ func (r *GetResultResponse) IsTerminal() bool {
 	}
 }
 
-func toString(v interface{}) string {
-	s, ok := v.(string)
-	if !ok {
-		return ""
-	}
-	return s
-}
 
 func relayErrorToClientCode(code string) internalerrors.Code {
 	switch strings.TrimSpace(code) {
@@ -156,43 +149,4 @@ func relayErrorToClientCode(code string) internalerrors.Code {
 	}
 }
 
-func toInt(v interface{}) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int32:
-		return int(n)
-	case int64:
-		return int(n)
-	case float32:
-		return int(n)
-	case float64:
-		return int(n)
-	default:
-		return 0
-	}
-}
 
-func toStringSlice(v interface{}) []string {
-	if v == nil {
-		return nil
-	}
-
-	if ss, ok := v.([]string); ok {
-		return ss
-	}
-
-	items, ok := v.([]interface{})
-	if !ok {
-		return nil
-	}
-
-	res := make([]string, 0, len(items))
-	for _, item := range items {
-		if s, ok := item.(string); ok {
-			res = append(res, s)
-		}
-	}
-
-	return res
-}

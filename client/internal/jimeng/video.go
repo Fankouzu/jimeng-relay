@@ -172,11 +172,11 @@ reqBody["image_urls"] = req.ImageURLs
 			return internalerrors.New(internalerrors.ErrUnknown, "submit task request failed", callErr)
 		}
 
-		code := submitToInt(body["code"])
-		status := submitToInt(body["status"])
+		code := ToInt(body["code"])
+		status := ToInt(body["status"])
 		if code == 50429 || code == 50430 || status == 50429 || status == 50430 {
-			message := submitToString(body["message"])
-			requestID := submitToString(body["request_id"])
+			message := ToString(body["message"])
+			requestID := ToString(body["request_id"])
 			return internalerrors.New(
 				internalerrors.ErrRateLimited,
 				fmt.Sprintf("submit task rate limited: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
@@ -195,11 +195,11 @@ reqBody["image_urls"] = req.ImageURLs
 		return nil, internalerrors.New(internalerrors.ErrTimeout, "context done after submit", err)
 	}
 
-	code := submitToInt(respBody["code"])
-	status := submitToInt(respBody["status"])
-	message := submitToString(respBody["message"])
-	requestID := submitToString(respBody["request_id"])
-	timeElapsed := submitToInt(respBody["time_elapsed"])
+	code := ToInt(respBody["code"])
+	status := ToInt(respBody["status"])
+	message := ToString(respBody["message"])
+	requestID := ToString(respBody["request_id"])
+	timeElapsed := ToInt(respBody["time_elapsed"])
 
 	if code != 10000 || status != 10000 {
 		if code == 50400 || status == 50400 {
@@ -229,10 +229,10 @@ reqBody["image_urls"] = req.ImageURLs
 
 	taskID := ""
 	if data, ok := respBody["data"].(map[string]interface{}); ok {
-		taskID = strings.TrimSpace(submitToString(data["task_id"]))
+		taskID = strings.TrimSpace(ToString(data["task_id"]))
 	}
 	if taskID == "" {
-		taskID = strings.TrimSpace(submitToString(respBody["task_id"]))
+		taskID = strings.TrimSpace(ToString(respBody["task_id"]))
 	}
 
 	return &VideoSubmitResponse{
@@ -254,7 +254,7 @@ type preparedVideoImages struct {
 }
 
 func prepareVideoImages(raw []string) (*preparedVideoImages, error) {
-	urls := submitCleanStringSlice(raw)
+	urls := CleanStringSlice(raw)
 	if len(urls) == 0 {
 		return nil, nil
 	}
@@ -371,8 +371,8 @@ func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) 
 		}
 
 		if errObj, ok := respBody["error"].(map[string]interface{}); ok {
-			errCode := strings.TrimSpace(toString(errObj["code"]))
-			errMsg := strings.TrimSpace(toString(errObj["message"]))
+			errCode := strings.TrimSpace(ToString(errObj["code"]))
+			errMsg := strings.TrimSpace(ToString(errObj["message"]))
 			return internalerrors.New(
 				relayErrorToClientCode(errCode),
 				fmt.Sprintf("relay error: code=%s message=%s", errCode, errMsg),
@@ -380,10 +380,10 @@ func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) 
 			)
 		}
 
-		code := toInt(respBody["code"])
-		status := toInt(respBody["status"])
-		message := toString(respBody["message"])
-		requestID := toString(respBody["request_id"])
+		code := ToInt(respBody["code"])
+		status := ToInt(respBody["status"])
+		message := ToString(respBody["message"])
+		requestID := ToString(respBody["request_id"])
 
 		if code == 0 && status == 0 && message == "" && requestID == "" {
 			return internalerrors.New(
@@ -437,17 +437,17 @@ func (c *Client) GetVideoResult(ctx context.Context, req VideoGetResultRequest) 
 	resp := &VideoGetResultResponse{
 		Preset:    req.Preset,
 		ReqKey:    reqKey,
-		Status:    VideoStatus(toString(body["status"])),
-		Code:      toInt(body["code"]),
-		Message:   toString(body["message"]),
-		RequestID: toString(body["request_id"]),
+		Status:    VideoStatus(ToString(body["status"])),
+		Code:      ToInt(body["code"]),
+		Message:   ToString(body["message"]),
+		RequestID: ToString(body["request_id"]),
 	}
 
 	if data, ok := body["data"].(map[string]interface{}); ok {
-		if status := toString(data["status"]); status != "" {
+		if status := ToString(data["status"]); status != "" {
 			resp.Status = VideoStatus(status)
 		}
-		resp.VideoURL = toString(data["video_url"])
+		resp.VideoURL = ToString(data["video_url"])
 	}
 
 	return resp, nil

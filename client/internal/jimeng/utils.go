@@ -93,3 +93,51 @@ func CleanStringSlice(v []string) []string {
 	}
 	return out
 }
+
+
+// ParseInt parses a string to an int.
+func ParseInt(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, err
+	}
+	return i, nil
+}
+
+// ParseFloat parses a string to a float64.
+// It supports fractions like "16/9".
+func ParseFloat(s string) (float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("empty")
+	}
+
+	if strings.Contains(s, "/") {
+		parts := strings.SplitN(s, "/", 2)
+		if len(parts) != 2 {
+			return 0, fmt.Errorf("invalid fraction")
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		if err != nil {
+			return 0, err
+		}
+		d, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if err != nil {
+			return 0, err
+		}
+		if d == 0 {
+			return 0, fmt.Errorf("division by zero")
+		}
+		return n / d, nil
+	}
+
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, err
+	}
+	return f, nil
+}

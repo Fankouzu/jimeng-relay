@@ -38,56 +38,32 @@ func (c *Client) Wait(ctx context.Context, taskID string, opts WaitOptions) (*Wa
 		timeout = 60 * time.Second
 	}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	timer := time.NewTimer(timeout)
-	defer func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
+	resp, pollCount, err := poll(ctx, interval, timeout,
+		func() (*GetResultResponse, error) {
+			return c.GetResult(ctx, GetResultRequest{TaskID: taskID})
+		},
+		func(resp *GetResultResponse, _ int) (bool, error) {
+			return resp.IsTerminal(), nil
+		},
+		func(resp *GetResultResponse) string {
+			if resp == nil {
+				return ""
 			}
-		}
-	}()
-
-	pollCount := 0
-	var last *GetResultResponse
-
-	for {
-		resp, err := c.GetResult(ctx, GetResultRequest{TaskID: taskID})
-		if err != nil {
-			return nil, err
-		}
-		pollCount++
-		last = resp
-
-		if resp.IsTerminal() {
-			return &WaitResult{
-				FinalStatus:      resp.Status,
-				ImageURLs:        resp.ImageURLs,
-				BinaryDataBase64: resp.BinaryDataBase64,
-				PollCount:        pollCount,
-			}, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, internalerrors.New(internalerrors.ErrTimeout, "context done during wait", ctx.Err())
-		case <-timer.C:
-			status := TaskStatus("")
-			if last != nil {
-				status = last.Status
-			}
-			return nil, internalerrors.New(
-				internalerrors.ErrTimeout,
-				fmt.Sprintf("wait timeout after %s (status=%s, polls=%d)", timeout, status, pollCount),
-				context.DeadlineExceeded,
-			)
-		case <-ticker.C:
-		}
+			return string(resp.Status)
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
+
+	return &WaitResult{
+		FinalStatus:      resp.Status,
+		ImageURLs:        resp.ImageURLs,
+		BinaryDataBase64: resp.BinaryDataBase64,
+		PollCount:        pollCount,
+	}, nil
 }
+
 
 type VideoWaitResult struct {
 	Status    VideoStatus
@@ -120,6 +96,51 @@ func (c *Client) VideoWait(ctx context.Context, taskID string, preset api.VideoP
 		timeout = 5 * time.Minute
 	}
 
+	resp, pollCount, err := poll(ctx, interval, timeout,
+		func() (*VideoGetResultResponse, error) {
+			return c.getVideoResult(ctx, VideoGetResultRequest{TaskID: taskID, Preset: preset, ReqKey: reqKey})
+		},
+		func(resp *VideoGetResultResponse, pc int) (bool, error) {
+			if resp.Status == VideoStatusDone {
+				return true, nil
+			}
+			if resp.Status == VideoStatusFailed || resp.Status == VideoStatusNotFound || resp.Status == VideoStatusExpired {
+				return false, internalerrors.New(
+					internalerrors.ErrBusinessFailed,
+					fmt.Sprintf("video task ended with status=%s (polls=%d)", resp.Status, pc),
+					nil,
+				)
+			}
+			return false, nil
+		},
+		func(resp *VideoGetResultResponse) string {
+			if resp == nil {
+				return ""
+			}
+			return string(resp.Status)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &VideoWaitResult{Status: resp.Status, VideoURL: resp.VideoURL, PollCount: pollCount}, nil
+}
+
+
+func (c *Client) getVideoResult(ctx context.Context, req VideoGetResultRequest) (*VideoGetResultResponse, error) {
+	if c.videoGetResult != nil {
+		return c.videoGetResult(ctx, req)
+	}
+	return c.GetVideoResult(ctx, req)
+}
+func poll[T any](
+	ctx context.Context,
+	interval, timeout time.Duration,
+	fetch func() (T, error),
+	checkTerminal func(T, int) (bool, error),
+	getStatus func(T) string,
+) (T, int, error) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -134,36 +155,31 @@ func (c *Client) VideoWait(ctx context.Context, taskID string, preset api.VideoP
 	}()
 
 	pollCount := 0
-	var last *VideoGetResultResponse
+	var last T
+	var zero T
 
 	for {
-		resp, err := c.getVideoResult(ctx, VideoGetResultRequest{TaskID: taskID, Preset: preset, ReqKey: reqKey})
+		resp, err := fetch()
 		if err != nil {
-			return nil, err
+			return zero, 0, err
 		}
 		pollCount++
 		last = resp
 
-		if resp.Status == VideoStatusDone {
-			return &VideoWaitResult{Status: resp.Status, VideoURL: resp.VideoURL, PollCount: pollCount}, nil
+		terminal, err := checkTerminal(resp, pollCount)
+		if err != nil {
+			return zero, 0, err
 		}
-		if resp.Status == VideoStatusFailed || resp.Status == VideoStatusNotFound || resp.Status == VideoStatusExpired {
-			return nil, internalerrors.New(
-				internalerrors.ErrBusinessFailed,
-				fmt.Sprintf("video task ended with status=%s (polls=%d)", resp.Status, pollCount),
-				nil,
-			)
+		if terminal {
+			return resp, pollCount, nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return nil, internalerrors.New(internalerrors.ErrTimeout, "context done during wait", ctx.Err())
+			return zero, 0, internalerrors.New(internalerrors.ErrTimeout, "context done during wait", ctx.Err())
 		case <-timer.C:
-			status := VideoStatus("")
-			if last != nil {
-				status = last.Status
-			}
-			return nil, internalerrors.New(
+			status := getStatus(last)
+			return zero, 0, internalerrors.New(
 				internalerrors.ErrTimeout,
 				fmt.Sprintf("wait timeout after %s (status=%s, polls=%d)", timeout, status, pollCount),
 				context.DeadlineExceeded,
@@ -171,11 +187,4 @@ func (c *Client) VideoWait(ctx context.Context, taskID string, preset api.VideoP
 		case <-ticker.C:
 		}
 	}
-}
-
-func (c *Client) getVideoResult(ctx context.Context, req VideoGetResultRequest) (*VideoGetResultResponse, error) {
-	if c.videoGetResult != nil {
-		return c.videoGetResult(ctx, req)
-	}
-	return c.GetVideoResult(ctx, req)
 }

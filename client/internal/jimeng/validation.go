@@ -96,8 +96,8 @@ func ValidateVideoSubmitRequest(req *VideoSubmitRequest) error {
 	req.AspectRatio = strings.TrimSpace(req.AspectRatio)
 	req.TemplateID = strings.TrimSpace(req.TemplateID)
 	req.CameraStrength = strings.TrimSpace(req.CameraStrength)
-	req.ImageURLs = submitCleanStringSlice(req.ImageURLs)
-	req.BinaryDataBase64 = submitCleanStringSlice(req.BinaryDataBase64)
+	req.ImageURLs = CleanStringSlice(req.ImageURLs)
+	req.BinaryDataBase64 = CleanStringSlice(req.BinaryDataBase64)
 
 	totalImageCount := len(req.ImageURLs) + len(req.BinaryDataBase64)
 	if req.Variant == "" && req.Preset != "" {

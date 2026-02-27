@@ -3,7 +3,6 @@ package jimeng
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -48,16 +47,16 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 		"return_url": true,
 	}
 
-	if imageURLs := submitCleanStringSlice(req.ImageURLs); len(imageURLs) > 0 {
+	if imageURLs := CleanStringSlice(req.ImageURLs); len(imageURLs) > 0 {
 		reqBody["image_urls"] = imageURLs
 	}
 
-	if binaryData := submitCleanStringSlice(req.BinaryDataBase64); len(binaryData) > 0 {
+	if binaryData := CleanStringSlice(req.BinaryDataBase64); len(binaryData) > 0 {
 		reqBody["binary_data_base64"] = binaryData
 	}
 
 	if sizeRaw := strings.TrimSpace(req.Size); sizeRaw != "" {
-		size, err := submitParseInt(sizeRaw)
+		size, err := ParseInt(sizeRaw)
 		if err != nil {
 			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("invalid size: %q", sizeRaw), err)
 		}
@@ -80,14 +79,14 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 	}
 
 	if minRatioRaw := strings.TrimSpace(req.MinRatio); minRatioRaw != "" {
-		minRatio, err := submitParseFloat(minRatioRaw)
+		minRatio, err := ParseFloat(minRatioRaw)
 		if err != nil {
 			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("invalid min_ratio: %q", minRatioRaw), err)
 		}
 		reqBody["min_ratio"] = minRatio
 	}
 	if maxRatioRaw := strings.TrimSpace(req.MaxRatio); maxRatioRaw != "" {
-		maxRatio, err := submitParseFloat(maxRatioRaw)
+		maxRatio, err := ParseFloat(maxRatioRaw)
 		if err != nil {
 			return nil, internalerrors.New(internalerrors.ErrValidationFailed, fmt.Sprintf("invalid max_ratio: %q", maxRatioRaw), err)
 		}
@@ -109,11 +108,11 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 			return internalerrors.New(internalerrors.ErrUnknown, "submit task request failed", callErr)
 		}
 
-		code := submitToInt(body["code"])
-		status := submitToInt(body["status"])
+		code := ToInt(body["code"])
+		status := ToInt(body["status"])
 		if code == 50429 || code == 50430 || status == 50429 || status == 50430 {
-			message := submitToString(body["message"])
-			requestID := submitToString(body["request_id"])
+			message := ToString(body["message"])
+			requestID := ToString(body["request_id"])
 			return internalerrors.New(
 				internalerrors.ErrRateLimited,
 				fmt.Sprintf("submit task rate limited: code=%d status=%d message=%s request_id=%s", code, status, message, requestID),
@@ -136,8 +135,8 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 
 	// Check for relay server error format: {"error":{"code":"...","message":"..."}}
 	if errObj, ok := respBody["error"].(map[string]interface{}); ok {
-		errCode := submitToString(errObj["code"])
-		errMsg := submitToString(errObj["message"])
+		errCode := ToString(errObj["code"])
+		errMsg := ToString(errObj["message"])
 		c.debug("relay error detected", "code", errCode, "message", errMsg)
 		return nil, internalerrors.New(
 			internalerrors.ErrAuthFailed,
@@ -146,11 +145,11 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 		)
 	}
 
-	code := submitToInt(respBody["code"])
-	status := submitToInt(respBody["status"])
-	message := submitToString(respBody["message"])
-	requestID := submitToString(respBody["request_id"])
-	timeElapsed := submitToInt(respBody["time_elapsed"])
+	code := ToInt(respBody["code"])
+	status := ToInt(respBody["status"])
+	message := ToString(respBody["message"])
+	requestID := ToString(respBody["request_id"])
+	timeElapsed := ToInt(respBody["time_elapsed"])
 
 	if code != 10000 || status != 10000 {
 		c.debug("business failure", "code", code, "status", status, "message", message, "request_id", requestID)
@@ -163,10 +162,10 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 
 	taskID := ""
 	if data, ok := respBody["data"].(map[string]interface{}); ok {
-		taskID = strings.TrimSpace(submitToString(data["task_id"]))
+		taskID = strings.TrimSpace(ToString(data["task_id"]))
 	}
 	if taskID == "" {
-		taskID = strings.TrimSpace(submitToString(respBody["task_id"]))
+		taskID = strings.TrimSpace(ToString(respBody["task_id"]))
 	}
 	if taskID == "" {
 		return nil, internalerrors.New(
@@ -188,99 +187,3 @@ func (c *Client) SubmitTask(ctx context.Context, req SubmitRequest) (*SubmitResp
 	return resp, nil
 }
 
-func submitToString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	switch val := v.(type) {
-	case string:
-		return val
-	case float64:
-		return fmt.Sprintf("%.0f", val)
-	case int:
-		return fmt.Sprintf("%d", val)
-	default:
-		return fmt.Sprintf("%v", v)
-	}
-}
-
-func submitToInt(v interface{}) int {
-	if v == nil {
-		return 0
-	}
-	switch val := v.(type) {
-	case float64:
-		return int(val)
-	case int:
-		return val
-	case int64:
-		return int(val)
-	case string:
-		i, err := strconv.Atoi(strings.TrimSpace(val))
-		if err != nil {
-			return 0
-		}
-		return i
-	default:
-		return 0
-	}
-}
-
-func submitCleanStringSlice(v []string) []string {
-	if len(v) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(v))
-	for _, s := range v {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		out = append(out, s)
-	}
-	return out
-}
-
-func submitParseInt(s string) (int, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, fmt.Errorf("empty")
-	}
-	i, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, err
-	}
-	return i, nil
-}
-
-func submitParseFloat(s string) (float64, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, fmt.Errorf("empty")
-	}
-
-	if strings.Contains(s, "/") {
-		parts := strings.SplitN(s, "/", 2)
-		if len(parts) != 2 {
-			return 0, fmt.Errorf("invalid fraction")
-		}
-		n, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-		if err != nil {
-			return 0, err
-		}
-		d, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-		if err != nil {
-			return 0, err
-		}
-		if d == 0 {
-			return 0, fmt.Errorf("division by zero")
-		}
-		return n / d, nil
-	}
-
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0, err
-	}
-	return f, nil
-}
