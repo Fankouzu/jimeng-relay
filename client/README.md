@@ -32,10 +32,6 @@ cp ./bin/jimeng /usr/local/bin/jimeng
 3. `.env` 文件（`client/.env`）
 4. 默认值 (Default)
 
-1. 命令行 flag（最高）
-2. 系统环境变量
-3. `.env` 文件（`client/.env`）
-
 ### 环境变量
 
 | 变量名 | 说明 | 默认值 |
@@ -162,19 +158,32 @@ jimeng download --task-id <task_id> --dir ./outputs --overwrite --format json
 | `t2v-720` | 文生视频 720p | `jimeng_t2v_v30` |
 | `t2v-1080` | 文生视频 1080p | `jimeng_t2v_v30_1080p` |
 | `t2v-pro` | 文生视频 3.0 Pro | `jimeng_ti2v_v30_pro` |
-| `i2v-first` | 图生视频 (首帧) | `jimeng_i2v_first_v30_1080` |
-| `i2v-first-tail` | 图生视频 (首尾帧) | `jimeng_i2v_first_tail_v30_1080` |
+| `i2v-first-720` | 图生视频 (首帧) 720p | `jimeng_i2v_first_v30` |
+| `i2v-first` | 图生视频 (首帧) 1080p | `jimeng_i2v_first_v30_1080` |
+| `i2v-first-tail-720` | 图生视频 (首尾帧) 720p | `jimeng_i2v_first_tail_v30` |
+| `i2v-first-tail` | 图生视频 (首尾帧) 1080p | `jimeng_i2v_first_tail_v30_1080` |
 | `i2v-first-pro` | 图生视频 3.0 Pro (首帧) | `jimeng_ti2v_v30_pro` |
 | `i2v-recamera` | 图生视频 (运镜) | `jimeng_i2v_recamera_v30` |
 
-### 6.2 视频提交
+### 6.2 视频变体说明
+
+| 变体 | 输入要求 | 特殊参数 |
+|:---|:---|:---|
+| t2v | 仅提示词 | --frames, --aspect-ratio |
+| t2v-pro | 仅提示词 | Pro 模型，质量更高 |
+| i2v-first-frame | 1 张图片 | --image-url 或 --image-file |
+| i2v-first-tail | 2 张图片 | --image-url 或 --image-file (两次) |
+| i2v-recamera | 1 张图片 + 运镜模板 | --template, --camera-strength |
+| i2v-first-pro | 1 张图片 | Pro 模型，质量更高 |
+
+### 6.3 视频提交 (submit)
 
 参数说明：
 - `--preset`：视频预设（必填）
 - `--prompt`：提示词（必填）
 - `--frames`：帧数，默认 `121` (针对 t2v)
 - `--aspect-ratio`：宽高比，默认 `16:9` (针对 t2v)
-- `--image-url` / `--image-file`：参考图输入
+- `--image-url` / `--image-file`：参考图输入（i2v-first-tail 需要 2 个）
 - `--template`：运镜模板 ID (针对 i2v-recamera)
 - `--camera-strength`：运镜强度 `weak|medium|strong` (针对 i2v-recamera)
 - `--wait`：提交后自动等待任务完成
@@ -187,11 +196,6 @@ jimeng download --task-id <task_id> --dir ./outputs --overwrite --format json
 ```bash
 # 文生视频 (指定协议与 Host)
 VOLC_SCHEME=https VOLC_HOST=visual.volcengineapi.com jimeng video submit \
-  --preset t2v-720 \
-  --prompt "一只在森林中奔跑的小狗" \
-  --aspect-ratio 16:9 \
-  --format json
-jimeng video submit \
   --preset t2v-720 \
   --prompt "一只在森林中奔跑的小狗" \
   --aspect-ratio 16:9 \
@@ -210,14 +214,33 @@ jimeng video submit \
   --prompt "让图片中的人物微笑" \
   --image-file "./input.png" \
   --format json
+
+# 首尾帧 (两张图片)
 jimeng video submit \
-  --preset i2v-first \
+  --preset i2v-first-tail \
+  --prompt "从第一张图平滑过渡到第二张图" \
+  --image-url "https://example.com/first.png" \
+  --image-url "https://example.com/tail.png" \
+  --format json
+
+# 720p 版本示例
+jimeng video submit \
+  --preset i2v-first-720 \
   --prompt "让图片中的人物微笑" \
+  --image-file "./input.png" \
+  --format json
+
+# 运镜模式示例
+jimeng video submit \
+  --preset i2v-recamera \
+  --prompt "镜头向左平移" \
   --image-url "https://example.com/input.png" \
+  --template "horizontal_pan_left" \
+  --camera-strength "strong" \
   --format json
 ```
 
-### 6.3 一步式提交 + 等待 + 下载
+### 6.4 一步式提交 + 等待 + 下载
 
 ```bash
 # 文生视频 Pro + 等待 + 下载
@@ -231,8 +254,7 @@ jimeng video submit \
   --format json
 ```
 
-
-### 6.4 视频查询、等待与下载
+### 6.5 视频查询、等待与下载
 
 ```bash
 # 查询状态
@@ -264,8 +286,7 @@ jimeng video download --task-id <task_id> --preset t2v-720 --dir ./outputs
 
 即使连续多次生成到同一个目录，也不会重名覆盖。
 
-
-## 8. 常见问题
+## 8. 常见问题与错误处理
 
 ### 8.1 迁移指南 (Migration)
 
@@ -274,22 +295,23 @@ jimeng video download --task-id <task_id> --preset t2v-720 --dir ./outputs
 - `VOLC_ACCESSKEY` / `VOLC_SECRETKEY`: 使用 Relay Server 生成的凭证
 - `VOLC_SCHEME`: 根据 Relay Server 配置选择 `http` 或 `https`
 
-### 8.2 并发限流 `50430`
-
-### 8.1 并发限流 `50430`
+### 8.2 并发限流 `50430` (Concurrent Limit)
 
 当返回类似错误：
-
 `Request Has Reached API Concurrent Limit, Please Try Later`
 
 处理建议：
+- **降低并发**：减少同时提交的任务数，或降低图片生成的 `--count`。
+- **指数退避**：在代码中实现重试逻辑，建议间隔 2s, 4s, 8s 后重试。
+- **服务端队列**：如果使用了 Relay Server，请检查 `UPSTREAM_MAX_QUEUE` 配置，增加排队深度。
 
-- 降低 `--count`
-- 间隔几秒后重试
+### 8.3 任务 done 但无 URL (Base64 Fallback)
 
-### 8.2 任务 done 但无 URL
+这是服务端返回形态差异（主要针对图片生成），客户端已支持图片 base64 回退下载，会自动保存为本地文件，无需手动处理。
 
-这是服务端返回形态差异（主要针对图片生成），客户端已支持图片 base64 回退下载，无需手动处理。
+### 8.4 视频生成超时
+
+视频生成通常需要 1-5 分钟。如果 `wait` 命令超时，请增加 `--wait-timeout` 参数（默认 10m）。
 
 ## 9. 开发验证命令
 
@@ -300,7 +322,20 @@ go vet ./...
 go build -o ./bin/jimeng .
 ```
 
-## 10. 参考文档
+## 10. 命令速查表 (Cheat Sheet)
+
+| 命令 | 说明 |
+|:---|:---|
+| `jimeng submit` | 提交图片生成任务 |
+| `jimeng query` | 查询图片任务状态 |
+| `jimeng wait` | 等待图片任务完成 |
+| `jimeng download` | 下载图片生成结果 |
+| `jimeng video submit` | 提交视频生成任务 |
+| `jimeng video query` | 查询视频任务状态 |
+| `jimeng video wait` | 等待视频任务完成 |
+| `jimeng video download` | 下载视频生成结果 |
+
+## 11. 参考文档
 
 - 火山引擎即梦 AI 图片生成 4.0：
   `https://www.volcengine.com/docs/85621/1817045`

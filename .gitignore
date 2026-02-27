@@ -10,7 +10,7 @@ server/bin/
 client/bin/
 server/server
 server/jimeng-server
-client/outputs
+client/outputs/
 
 
 # Database
